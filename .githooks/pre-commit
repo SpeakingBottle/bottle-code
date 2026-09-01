@@ -1,0 +1,5 @@
+#!/bin/sh
+# 提交前检查：防止把密钥/敏感信息提交进仓库。
+# 安装：git config core.hooksPath .githooks
+set -e
+python scripts/check_secrets.py

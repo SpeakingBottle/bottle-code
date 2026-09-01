@@ -1,0 +1,49 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- 环境 / 密钥 / 敏感文件 ----
+.env
+.env.*
+!.env.example
+.envrc
+*.pem
+*.key
+*.p12
+*.jks
+secrets/
+credentials
+*.log
+
+# ---- 项目本地数据 / 个人内容 ----
+memory/notebook.md
+chroma/
+data/
+*.db
+*.sqlite3
+*.sqlite
+
+
+# ---- IDE / 操作系统 / 编辑器 ----
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ---- 教学/个人本地约定（含个人学习信息，不发布）----
+AGENTS.md
