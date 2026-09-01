@@ -24,6 +24,8 @@ class OpenAIChatLLM(LLM):
         self.client = OpenAI(
             api_key=api_key or os.environ.get("OPENAI_API_KEY"),
             base_url=base_url or os.environ.get("OPENAI_BASE_URL"),
+            timeout=60.0,      # 单次请求最长 60s，防网络抖动超时
+            max_retries=2,     # 网络错误自动重试 2 次
         )
 
     def chat(self, messages, tools):

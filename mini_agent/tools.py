@@ -207,6 +207,19 @@ def run_shell(command: str):
         return json.dumps({"error": err or f"退出码 {proc.returncode}", "stdout": out})
     return json.dumps({"ok": True, "stdout": out, "stderr": err})
 
+@tool("final_answer", "任务完成时调用它给出最终答复；把结果填进这些结构化字段", {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string", "description": "给用户的一句话总结"},
+        "steps": {"type": "array", "items": {"type": "string"}, "description": "执行步骤"},
+        "used_tools": {"type": "array", "items": {"type": "string"}, "description": "用到的工具名"},
+    },
+    "required": ["summary", "steps"],
+})
+def final_answer(summary: str, steps: list[str], used_tools: list[str] | None = None):
+    return json.dumps({"summary": summary, "steps": steps,
+                       "used_tools": used_tools or []}, ensure_ascii=False)
+
 
 def get_tool_schemas():
     return [t.schema() for t in _REGISTRY.values()]
