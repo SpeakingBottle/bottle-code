@@ -85,10 +85,10 @@
 
 ## 学习进度
 
-- 当前课程：**第2课（最小闭环）** —— 待开始
+- 当前课程：**第2课（最小闭环）** —— 已开始（进行中）
 - 已完成课程：第1课（心智模型 + 环境准备）—— 已完成：真实 API 接通，Agent 能通过工具调用 calculator（25×4=100 验证通过）
 - 环境：已建 Python 3.13 虚拟环境 `.venv`，依赖已安装；运行需先激活 venv 或直接用 `.venv\Scripts\python.exe`
-- 待补 / 备注：'.env' 已配置 DeepSeek 兼容 API；确认模型为 deepseek-v4-flash-vision-exp（该服务商可用）
+- 待补 / 备注：第2课重点：理解 function calling 消息契约，学会多工具串成多步任务
 
 ---
 

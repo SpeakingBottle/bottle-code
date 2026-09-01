@@ -35,6 +35,9 @@ data/
 *.db
 *.sqlite3
 *.sqlite
+# 任务产生的临时输出 / 本地草稿脚本
+summary.md
+/_*.py
 
 # ---- IDE / 操作系统 / 编辑器 ----
 .idea/

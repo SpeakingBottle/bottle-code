@@ -3,12 +3,22 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import shlex
+import subprocess
 
 _REGISTRY: dict[str, "Tool"] = {}
 
 # 所有读写都限制在这个目录里，防止 Agent 越权访问系统文件。
 BASE_DIR = os.path.abspath(os.environ.get("AGENT_WORKDIR", os.getcwd()))
 MEMORY_FILE = os.path.join(BASE_DIR, "memory", "notebook.md")
+
+# run_shell 的"白名单"：只允许执行这几个程序（最简单的沙箱）。
+# 说明：Windows 下 dir/echo 是 cmd 内置命令，subprocess(shell=False) 找不到；
+# 建议用 ls / cat / findstr / python / py / git / where 等真实可执行程序。
+ALLOWED_COMMANDS = {
+    "python", "python3", "python.exe", "py",
+    "git", "node", "where", "ls", "cat", "wc", "findstr",
+}
 
 
 class Tool:
@@ -153,6 +163,49 @@ def recall(keyword: str):
     with open(MEMORY_FILE, "r", encoding="utf-8") as f:
         lines = [ln.strip() for ln in f if keyword in ln]
     return json.dumps({"matches": lines}, ensure_ascii=False)
+
+
+@tool("run_shell", "在白名单内执行一条系统命令并返回输出（不支持管道/重定向；用于查看目录、运行脚本、查版本等）", {
+    "type": "object",
+    "properties": {
+        "command": {"type": "string", "description": "要执行的命令，例如 'python --version' 或 'dir'"},
+    },
+    "required": ["command"],
+})
+def run_shell(command: str):
+    # 1) 拆分命令：把 ';' / '&&' / '|' 等拼接拆成独立参数，避免偷塞子命令
+    parts = shlex.split(command)
+    if not parts:
+        return json.dumps({"error": "命令为空"})
+
+    # 2) 白名单：只允许"第一个词"是白名单程序（这就是最基本的沙箱）
+    exe = os.path.basename(parts[0]).lower()
+    if exe not in ALLOWED_COMMANDS:
+        return json.dumps({
+            "error": f"不允许的命令: {parts[0]}；白名单允许: {sorted(ALLOWED_COMMANDS)}"
+        })
+
+    # 3) 执行：shell=False 是关键，不解释管道/重定向/环境变量，更安全；加超时防止卡死
+    try:
+        proc = subprocess.run(
+            parts,
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except subprocess.TimeoutExpired:
+        return json.dumps({"error": "命令超时（>10s）"})
+    except Exception as exc:
+        return json.dumps({"error": f"执行失败: {exc}"})
+
+    out = (proc.stdout or "").strip()
+    err = (proc.stderr or "").strip()
+    if proc.returncode != 0:
+        return json.dumps({"error": err or f"退出码 {proc.returncode}", "stdout": out})
+    return json.dumps({"ok": True, "stdout": out, "stderr": err})
 
 
 def get_tool_schemas():
