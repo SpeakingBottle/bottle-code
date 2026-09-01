@@ -6,6 +6,8 @@ import os
 import shlex
 import subprocess
 
+from . import knowledge
+
 _REGISTRY: dict[str, "Tool"] = {}
 
 # 所有读写都限制在这个目录里，防止 Agent 越权访问系统文件。
@@ -219,6 +221,19 @@ def run_shell(command: str):
 def final_answer(summary: str, steps: list[str], used_tools: list[str] | None = None):
     return json.dumps({"summary": summary, "steps": steps,
                        "used_tools": used_tools or []}, ensure_ascii=False)
+
+
+@tool("kb_search", "在项目知识库中检索与问题相关的段落（RAG）；当问题涉及项目资料/文档/笔记时使用。返回匹配片段和来源。", {
+    "type": "object",
+    "properties": {"query": {"type": "string", "description": "检索问题或关键词"}},
+    "required": ["query"],
+})
+def kb_search(query: str):
+    results = knowledge.search(query, top_k=3)
+    if not results:
+        return json.dumps({"error": "知识库为空或没有匹配内容"}, ensure_ascii=False)
+    out = [{"source": r["source"], "score": r["score"], "text": r["text"][:300]} for r in results]
+    return json.dumps(out, ensure_ascii=False)
 
 
 def get_tool_schemas():
