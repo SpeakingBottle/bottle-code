@@ -9,11 +9,31 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
+def _load_env() -> None:
+    """加载 .env：优先用 python-dotenv；没装也能用内置兜底解析器，保证项目开箱即用。"""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        return
+    except ImportError:
+        pass
+
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+    if not os.path.isfile(env_path):
+        return
+    with open(env_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            value = value.strip()
+            if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+                value = value[1:-1]
+            os.environ.setdefault(key.strip(), value)
+
+
+_load_env()
 
 from .agent import Agent
 from .llm import MockLLM, OpenAIChatLLM

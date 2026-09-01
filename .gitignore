@@ -36,6 +36,8 @@ data/
 *.sqlite3
 *.sqlite
 
+# ---- 教学/个人本地约定（含个人学习信息，不发布）----
+AGENTS.md
 
 # ---- IDE / 操作系统 / 编辑器 ----
 .idea/
@@ -44,6 +46,3 @@ data/
 *.swo
 .DS_Store
 Thumbs.db
-
-# ---- 教学/个人本地约定（含个人学习信息，不发布）----
-AGENTS.md
