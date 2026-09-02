@@ -213,17 +213,18 @@ def run_shell(command: str):
     "type": "object",
     "properties": {
         "summary": {"type": "string", "description": "给用户的一句话总结"},
+        "plan": {"type": "array", "items": {"type": "string"}, "description": "执行前制定的计划步骤"},
         "steps": {"type": "array", "items": {"type": "string"}, "description": "执行步骤"},
         "used_tools": {"type": "array", "items": {"type": "string"}, "description": "用到的工具名"},
     },
-    "required": ["summary", "steps"],
+    "required": ["summary", "plan", "steps"],
 })
 def final_answer(summary: str, steps: list[str], used_tools: list[str] | None = None):
     return json.dumps({"summary": summary, "steps": steps,
                        "used_tools": used_tools or []}, ensure_ascii=False)
 
 
-@tool("kb_search", "在项目知识库中检索与问题相关的段落（RAG）；当问题涉及项目资料/文档/笔记时使用。返回匹配片段和来源。", {
+@tool("kb_search", "在项目知识库中检索与问题相关的段落（RAG）；当问题涉及项目资料/文档/笔记时使用。返回匹配片段和来源。返回的 text 已包含匹配内容，通常无需再调用 read_file。", {
     "type": "object",
     "properties": {"query": {"type": "string", "description": "检索问题或关键词"}},
     "required": ["query"],

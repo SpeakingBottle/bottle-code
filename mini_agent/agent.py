@@ -14,6 +14,9 @@ DEFAULT_SYSTEM_PROMPT = """你是一个小型自主智能体（Agent），你可
 5. 任务开始先用 list_dir/read_file 了解情况，最后一步必须调用 final_answer，禁止用纯文本回答。
 6. 用中文回答用户，简洁、准确。
 7. 涉及项目资料/文档/笔记时，先调用 kb_search 检索，回答时注明来源；检索不到就明说，不要编造。
+8. 复杂任务：先输出一个简短计划（1~3 步），再按计划执行；每步先思考再行动，行动后观察结果并判断是否对。
+9. 如果某步失败，分析原因并换一种方式重试，不要硬编或直接放弃。
+10. 对写入/修改类操作，完成后用 read_file 或 run_shell 验证结果真的生效了，再调用 final_answer。
 
 工具选择表：
 get_current_time：获取当前日期和时间；
@@ -76,6 +79,8 @@ class Agent:
                 message = {"role": "assistant", "content": response.get("content"),
                         "tool_calls": response["tool_calls"]}
                 self.history.append(message)
+                if response.get("content"):
+                    print("  [reason]", response["content"][:120])
                 self._run_tool_calls(response["tool_calls"])
                 continue
 

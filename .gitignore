@@ -37,7 +37,8 @@ data/
 *.sqlite
 # 任务产生的临时输出 / 本地草稿脚本
 summary.md
-/_*.py
+result.md
+_*.py
 /knowledge/index.json
 
 # ---- IDE / 操作系统 / 编辑器 ----
