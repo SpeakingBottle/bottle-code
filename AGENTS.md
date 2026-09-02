@@ -85,13 +85,14 @@
 
 ## 学习进度
 
-- 当前课程：**第5课（规划 + ReAct）** —— 已开始（进行中）
+- 当前课程：**第6课（多 Agent + MCP）** —— 待开始
 - 已完成课程：第1课（心智模型 + 环境准备）—— 真实 API 接通
 - 已完成课程：第2课（最小闭环）—— 多步串行 + run_shell 白名单沙箱
 - 已完成课程：第3课（提示词工程）—— final_answer 终止工具 + 结构化输出 + API 超时/重试
-- 已完成课程：第4课（记忆 + RAG）—— 实现了最小版向量检索（kb_search + knowledge.py + build_kb），Agent 能主动检索知识库并注明来源
+- 已完成课程：第4课（记忆 + RAG）—— 最小版向量检索 kb_search + knowledge.py + build_kb
+- 已完成课程：第5课（规划 + ReAct）—— 计划字段 + ReAct 规则 + 思考可见 + 写入后自验证（result.md 已验证）
 - 环境：Python 3.13 虚拟环境 `.venv`；运行激活 venv 或用 `.venv/Scripts/python.exe`
-- 待补 / 备注：第5课重点：任务分解、计划-执行-反思（ReAct）、自我校验、多步编排
+- 待补 / 备注：第6课重点：多 Agent 分工（规划者/执行者/评审者）+ 消息协议，以及 MCP 接入与自定义 MCP server
 
 ---
 
