@@ -38,11 +38,17 @@ agent-learn/
 │   ├── agent.py      # Agent 主循环（最核心）
 │   ├── llm.py        # 模型后端抽象（真实 API / mock）
 │   ├── tools.py      # 工具注册表 + 各工具实现
+│   ├── knowledge.py  # 最小版 RAG（切块 + 向量 + 检索）
 │   └── main.py       # 命令行入口
+├── knowledge/        # 知识库文档（用 build_kb.py 建索引）
 ├── examples/
-│   └── mock_demo.py  # 离线演示脚本
+│   ├── mock_demo.py  # 离线演示脚本
+│   └── build_kb.py   # 建立知识库向量索引
 ├── memory/           # 长期记忆存放处（notebook.md）
+├── scripts/          # 辅助脚本（如密钥检查）
+├── .githooks/        # 提交前钩子
 ├── .env.example
+├── LICENSE
 └── requirements.txt
 ```
 
@@ -106,10 +112,11 @@ python -m mini_agent.main --provider openai --model gpt-4o-mini
 
 ### 4. 两类“记忆”
 
-- **短期记忆**：`Agent.history`。每轮对话、每次工具结果都塞进去，让模型“记得”刚才发生了什么。
-- **长期记忆**：`tools.py` 里的 `remember` / `recall` 工具。它把信息写到 `memory/notebook.md`，Agent 可以跨会话把它读回来。这其实就是最简单的一版“Agent 记忆系统”。
+- **短期记忆**：`Agent.history` + 滑动窗口（`max_context_messages`）。对话太长时只把最近 N 条发给模型，防止上下文爆掉、也避免“忘了开头”。
+- **长期记忆（单条事实）**：`remember` / `recall`。把重要事实写进 `memory/notebook.md`，跨会话可检索。
+- **长期记忆（RAG）**：`kb_search` + `knowledge.py`。把文档切块、向量化、按相似度检索，让 Agent 基于资料回答并注明来源。
 
-> 进阶版长期记忆 = 向量数据库 + 检索（RAG）。本项目用文件 + 关键词搜索讲清“为什么需要检索”。
+> 三者配合：重要事实用 `remember` 存，整摞资料用 `kb_search` 检索，短期窗口保证长对话不超载。
 
 ## 动手练习（按难度递进）
 

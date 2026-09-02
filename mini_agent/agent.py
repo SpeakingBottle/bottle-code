@@ -17,6 +17,7 @@ DEFAULT_SYSTEM_PROMPT = """你是一个小型自主智能体（Agent），你可
 8. 复杂任务：先输出一个简短计划（1~3 步），再按计划执行；每步先思考再行动，行动后观察结果并判断是否对。
 9. 如果某步失败，分析原因并换一种方式重试，不要硬编或直接放弃。
 10. 对写入/修改类操作，完成后用 read_file 或 run_shell 验证结果真的生效了，再调用 final_answer。
+11. 短期上下文（history）是滑动窗口，只保留最近若干轮；重要事实/用户偏好请用 remember 存入长期记忆，需要时用 recall 检索。
 
 工具选择表：
 get_current_time：获取当前日期和时间；
@@ -36,15 +37,28 @@ kb_search：当问题涉及项目资料/文档/笔记时使用
 class Agent:
     """核心：把“大模型 + 工具 + 循环 + 记忆”串起来的主循环。"""
 
-    def __init__(self, llm: LLM, max_steps: int = 12, system_prompt: str = DEFAULT_SYSTEM_PROMPT):
+    def __init__(self, llm: LLM, max_steps: int = 12, max_context_messages: int = 20,
+                 system_prompt: str = DEFAULT_SYSTEM_PROMPT):
         self.llm = llm
         self.max_steps = max_steps
+        self.max_context_messages = max_context_messages   # 短期上下文"滑动窗口"大小
         self.system_prompt = system_prompt
-        self.history: list[dict] = []   # 短期记忆：完整对话上下文
+        self.history: list[dict] = []   # 完整对话历史（内部保留，发送给模型时用窗口裁剪）
         self.verbose = True
+        self._warned_trim = False
 
     def _messages(self) -> list[dict]:
-        return [{"role": "system", "content": self.system_prompt}] + list(self.history)
+        msgs = [{"role": "system", "content": self.system_prompt}]
+        recent = list(self.history)
+        if len(recent) > self.max_context_messages:
+            recent = recent[-self.max_context_messages:]
+            # 窗口开头若落在孤立的 tool 结果上，把它丢掉（它的 assistant 工具调用已被裁掉）
+            while recent and recent[0]["role"] == "tool":
+                recent.pop(0)
+            if not self._warned_trim and self.verbose:
+                print(f"  [memory] 短期上下文已裁剪为最近 {len(recent)} 条消息（滑动窗口）")
+                self._warned_trim = True
+        return msgs + recent
 
     def _run_tool_calls(self, tool_calls):
         for call in tool_calls:
