@@ -61,6 +61,7 @@
 - **短期记忆**：`Agent.history` + 滑动窗口（`max_context_messages`），长对话裁成最近 N 条
 - **长期记忆**：`remember`/`recall`（`memory/notebook.md`）+ `kb_search`（`knowledge/` 向量检索）
 - **最小 RAG**：`mini_agent/knowledge.py`（切块 + 词频向量 + 余弦相似度）+ `examples/build_kb.py`（建索引）
+- **多 Agent 分工**：`mini_agent/roles.py`（`RoleAgent` = 复用 Agent + 角色人设 + 受限工具集；`Orchestrator` = 规划者/执行者/评审者 + JSON 消息协议 + 重试）+ `examples/multi_agent_demo.py`
 - **模型后端**：`mini_agent/llm.py`（OpenAI 兼容 + 超时/重试 + `MockLLM`）
 - **防护**：`.githooks/pre-commit` + `scripts/check_secrets.py`（提交前扫密钥）
 - **知识库**：`knowledge/project.md`、`knowledge/lesson_notes.md`（索引 `knowledge/index.json` 已 gitignore）
@@ -84,7 +85,7 @@
 
 ## 学习进度
 
-- 当前课程：**第6课（多 Agent + MCP）** —— 待开始
+- 当前课程：**第6课（多 Agent + MCP）** —— 进行中：6a「多 Agent 分工」已跑通（规划者/执行者/评审者 + JSON 消息协议 + 白名单工具），6b「MCP」待做
 - 已完成：
   - 第1课：真实 API 接通（DeepSeek 兼容）
   - 第2课：多步串行 + run_shell 白名单沙箱
@@ -100,7 +101,7 @@
 
 - `README.md` —— 项目说明与上手教程
 - `AGENTS.md` —— 本文件，教学约定 + 项目现状 + 进度（每次会话先读）
-- `mini_agent/` —— 核心：`agent.py`(主循环) `tools.py`(工具) `llm.py`(模型后端) `knowledge.py`(最小RAG) `main.py`(CLI)
+- `mini_agent/` —— 核心：`agent.py`(主循环) `tools.py`(工具) `llm.py`(模型后端) `knowledge.py`(最小RAG) `roles.py`(多Agent分工) `main.py`(CLI)
 - `knowledge/` —— 知识库文档（project.md / lesson_notes.md），索引 index.json 已 gitignore
-- `examples/` —— `mock_demo.py`(离线演示) / `build_kb.py`(建索引)
+- `examples/` —— `mock_demo.py`(离线演示) / `build_kb.py`(建索引) / `multi_agent_demo.py`(多Agent演示)
 - `scripts/` + `.githooks/` —— 敏感信息检查与提交前钩子

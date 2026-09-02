@@ -39,11 +39,13 @@ agent-learn/
 │   ├── llm.py        # 模型后端抽象（真实 API / mock）
 │   ├── tools.py      # 工具注册表 + 各工具实现
 │   ├── knowledge.py  # 最小版 RAG（切块 + 向量 + 检索）
+│   ├── roles.py      # 多 Agent 分工（规划者/执行者/评审者 + 编排器）
 │   └── main.py       # 命令行入口
 ├── knowledge/        # 知识库文档（用 build_kb.py 建索引）
 ├── examples/
-│   ├── mock_demo.py  # 离线演示脚本
-│   └── build_kb.py   # 建立知识库向量索引
+│   ├── mock_demo.py        # 离线演示脚本
+│   ├── build_kb.py         # 建立知识库向量索引
+│   └── multi_agent_demo.py # 多 Agent 分工演示
 ├── memory/           # 长期记忆存放处（notebook.md）
 ├── scripts/          # 辅助脚本（如密钥检查）
 ├── .githooks/        # 提交前钩子
@@ -117,6 +119,28 @@ python -m mini_agent.main --provider openai --model gpt-4o-mini
 - **长期记忆（RAG）**：`kb_search` + `knowledge.py`。把文档切块、向量化、按相似度检索，让 Agent 基于资料回答并注明来源。
 
 > 三者配合：重要事实用 `remember` 存，整摞资料用 `kb_search` 检索，短期窗口保证长对话不超载。
+
+### 5. 多 Agent 分工（`roles.py`）
+
+单个 Agent 只有“一个脑子”。当任务复杂到需要**同时做多件事、互相审查**时，就把它拆成多个角色：
+
+```
+用户任务
+   ↓
+[规划者] 只拆步，不执行 → 计划步骤
+   ↓
+[执行者] 真正动手（计算/读写/跑命令）
+   ↓
+[评审者] 只看结果，判定 ok / retry
+   ↓  (retry 则把反馈带回执行者重做)
+结构化结果
+```
+
+- **分工本质**：给不同角色不同的 `system_prompt`（人设 + 规则）和不同的 `allowed_tools`（白名单）。
+- **消息协议**：角色之间用 JSON 传递 `task / steps / result / verdict / feedback`，而不是散乱的文字。
+- **复用第2课循环**：规划者/执行者/评审者都是同一个 `Agent` 类，只是人设和工具不同。
+
+> 试运行：`python examples/multi_agent_demo.py --provider mock`（离线看骨架）或换 `openai-compatible` 用真实模型。
 
 ## 动手练习（按难度递进）
 

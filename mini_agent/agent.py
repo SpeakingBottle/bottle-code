@@ -38,11 +38,14 @@ class Agent:
     """核心：把“大模型 + 工具 + 循环 + 记忆”串起来的主循环。"""
 
     def __init__(self, llm: LLM, max_steps: int = 12, max_context_messages: int = 20,
-                 system_prompt: str = DEFAULT_SYSTEM_PROMPT):
+                 system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+                 allowed_tools: set[str] | None = None):
         self.llm = llm
         self.max_steps = max_steps
         self.max_context_messages = max_context_messages   # 短期上下文"滑动窗口"大小
         self.system_prompt = system_prompt
+        # 工具白名单：None = 允许所有工具；传一个集合则只允许这些（权限最小化的雏形）
+        self.allowed_tools = None if allowed_tools is None else set(allowed_tools)
         self.history: list[dict] = []   # 完整对话历史（内部保留，发送给模型时用窗口裁剪）
         self.verbose = True
         self._warned_trim = False
@@ -77,6 +80,8 @@ class Agent:
             self.history.append({"role": "user", "content": user_input})
 
         tool_schemas = tools.get_tool_schemas()
+        if self.allowed_tools is not None:
+            tool_schemas = [s for s in tool_schemas if s["function"]["name"] in self.allowed_tools]
         for step in range(self.max_steps):
             if verbose:
                 print(f"\n--- Step {step + 1} ---")

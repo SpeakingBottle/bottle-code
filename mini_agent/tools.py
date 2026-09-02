@@ -216,12 +216,19 @@ def run_shell(command: str):
         "plan": {"type": "array", "items": {"type": "string"}, "description": "执行前制定的计划步骤"},
         "steps": {"type": "array", "items": {"type": "string"}, "description": "执行步骤"},
         "used_tools": {"type": "array", "items": {"type": "string"}, "description": "用到的工具名"},
+        "verdict": {"type": "string", "description": "(评审用) ok 或 retry"},
+        "feedback": {"type": "string", "description": "(评审用) 给执行者的改进建议"},
+        "result": {"type": "string", "description": "(执行用) 关键结果"},
     },
     "required": ["summary", "plan", "steps"],
 })
-def final_answer(summary: str, steps: list[str], used_tools: list[str] | None = None):
+def final_answer(summary: str, steps: list[str], used_tools: list[str] | None = None,
+                verdict: str | None = None, feedback: str | None = None,
+                result: str | None = None):
     return json.dumps({"summary": summary, "steps": steps,
-                       "used_tools": used_tools or []}, ensure_ascii=False)
+                       "used_tools": used_tools or [],
+                       "verdict": verdict, "feedback": feedback,
+                       "result": result}, ensure_ascii=False)
 
 
 @tool("kb_search", "在项目知识库中检索与问题相关的段落（RAG）；当问题涉及项目资料/文档/笔记时使用。返回匹配片段和来源。返回的 text 已包含匹配内容，通常无需再调用 read_file。", {
