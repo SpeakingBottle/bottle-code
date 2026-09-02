@@ -39,7 +39,9 @@ REVIEWER_PROMPT = """你是「评审者」(Reviewer)，负责检查执行者的�
 1. 判断结果是否回答了问题、有没有幻觉/矛盾/偷工减料/副作用。
 2. 结果可信 → verdict=ok；有问题 → verdict=retry。
 3. 无论哪种都要给 feedback：一句话说明哪里对、或哪里需要改。
-4. 最后一步必须调用 final_answer：verdict 和 feedback 都要填，summary 写一句话结论。"""
+4. 如果执行者声称写入了文件，你必须用 read_file 实际读取该文件，确认它真的存在、内容符合任务要求，再下 verdict——不能只信执行者自己报的 result。
+5. 最后一步必须调用 final_answer：verdict 和 feedback 都要填，summary 写一句话结论。
+"""
 
 
 class RoleAgent(Agent):
@@ -78,7 +80,7 @@ class Orchestrator:
         )
         self.reviewer = RoleAgent(
             llm, "reviewer", REVIEWER_PROMPT,
-            set(),   # 评审者无工具
+            {"read_file", "list_dir"},  #只读
         )
 
     def _parse(self, raw: str) -> dict:
