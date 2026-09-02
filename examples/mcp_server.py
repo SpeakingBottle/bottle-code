@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+import subprocess
 
 from mcp.server.mcpserver import MCPServer
 
@@ -27,6 +28,26 @@ def list_files(directory: str, ext: str = ".py") -> str:
     paths = sorted(str(p) for p in pathlib.Path(directory).rglob(f"*{ext}") if p.is_file())
     return "\n".join(paths) if paths else "(无匹配文件)"
 
+@server.tool(description="查询当前 git 仓库的分支和未提交改动（只读）。")
+def git_status() -> str:
+    # 只读命令：--short 给出紧凑的改动列表，--branch 额外把当前分支/跟踪信息放在第一行
+    proc = subprocess.run(
+        ["git", "status", "--short", "--branch"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    if proc.returncode != 0:
+        return f"(git 查询失败) {proc.stderr.strip() or f'退出码 {proc.returncode}'}"
+
+    lines = proc.stdout.strip().splitlines()
+    if not lines:
+        return "当前仓库干净：没有未提交改动。"
+
+    # 第一行形如 "## master" 或 "## master...origin/master [ahead 1]"
+    branch_desc = lines[0].replace("## ", "", 1)
+    changes = [ln for ln in lines[1:] if ln.strip()]
+    if changes:
+        return (f"当前分支: {branch_desc}\n有未提交改动:\n" + "\n".join(changes))
+    return f"当前分支: {branch_desc}\n仓库干净，没有未提交改动。"
 
 if __name__ == "__main__":
     server.run(transport="stdio")
