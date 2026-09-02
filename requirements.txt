@@ -1,2 +1,3 @@
 openai>=1.20.0
 python-dotenv>=1.0.0
+mcp>=1.0.0   # 用于自定义 MCP server / 接入第三方 MCP 工具

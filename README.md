@@ -40,12 +40,15 @@ agent-learn/
 │   ├── tools.py      # 工具注册表 + 各工具实现
 │   ├── knowledge.py  # 最小版 RAG（切块 + 向量 + 检索）
 │   ├── roles.py      # 多 Agent 分工（规划者/执行者/评审者 + 编排器）
+│   ├── mcp_client.py # MCP 客户端适配器（把外部 MCP 工具挂进 Agent）
 │   └── main.py       # 命令行入口
 ├── knowledge/        # 知识库文档（用 build_kb.py 建索引）
 ├── examples/
 │   ├── mock_demo.py        # 离线演示脚本
 │   ├── build_kb.py         # 建立知识库向量索引
-│   └── multi_agent_demo.py # 多 Agent 分工演示
+│   ├── multi_agent_demo.py # 多 Agent 分工演示
+│   ├── mcp_server.py       # 自定义 MCP server（仓库统计）
+│   └── mcp_demo.py         # 把 MCP 工具接进 Agent 的演示
 ├── memory/           # 长期记忆存放处（notebook.md）
 ├── scripts/          # 辅助脚本（如密钥检查）
 ├── .githooks/        # 提交前钩子
@@ -141,6 +144,26 @@ python -m mini_agent.main --provider openai --model gpt-4o-mini
 - **复用第2课循环**：规划者/执行者/评审者都是同一个 `Agent` 类，只是人设和工具不同。
 
 > 试运行：`python examples/multi_agent_demo.py --provider mock`（离线看骨架）或换 `openai-compatible` 用真实模型。
+
+### 6. MCP 接入（`mcp_client.py` + `examples/mcp_server.py`）
+
+**MCP（Model Context Protocol）** 是统一“LLM 应用如何接外部工具/数据”的开放协议，号称“给 AI 的 USB-C”。它把**提供能力**和**使用能力**解耦：
+
+```
+Agent（Host/Client）  ⇄  MCP Server（暴露工具/资源/提示）
+```
+
+- 我们的 **client 适配器**（`mcp_client.py`）用一个子进程把 MCP server 跑起来，走 stdio 交换**换行分隔的 JSON-RPC** 消息：
+  `initialize` → `tools/list`（发现工具）→ `tools/call`（调用工具）。
+- 它把每个 MCP 工具**翻译成本项目 Agent 认识的 `Tool`**（名字加 `mcp_` 前缀、参数直接复用 MCP 的 JSON Schema）。
+- 于是 **`Agent` 主循环几乎不用改**——它只是多看到几个工具而已，这就是复用第2课循环的威力。
+
+```
+# 启动自定义 MCP server（仓库统计）
+python examples/mcp_demo.py --provider openai-compatible
+```
+
+> 价值：以后给 CodeOps Agent 加能力（git / 数据库 / 文件系统）只需**挂一个 MCP server**，而不是改 Agent 代码。
 
 ## 动手练习（按难度递进）
 
