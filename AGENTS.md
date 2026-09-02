@@ -63,6 +63,7 @@
 - **最小 RAG**：`mini_agent/knowledge.py`（切块 + 词频向量 + 余弦相似度）+ `examples/build_kb.py`（建索引）
 - **多 Agent 分工**：`mini_agent/roles.py`（`RoleAgent` = 复用 Agent + 角色人设 + 受限工具集；`Orchestrator` = 规划者/执行者/评审者 + JSON 消息协议 + 重试）+ `examples/multi_agent_demo.py`
 - **MCP 接入**：`mini_agent/mcp_client.py`（同步 stdio 客户端适配器，把外部 MCP 工具翻译成 Agent 的 `Tool`）+ `examples/mcp_server.py`（自定义 MCP server，`repo-stats`：count_loc / list_files / git_status）+ `examples/mcp_demo.py`；依赖 `mcp>=1.0.0`
+- **可靠性 + 评测**：`mini_agent/guardrails.py`（`safe_path` 路径沙箱 / `find_secrets` 密钥检测 / `redact_secrets` 脱敏）、`mini_agent/audit.py`（`AuditLogger` JSONL 审计 + `format_trace` 轨迹）、`examples/eval_harness.py`（评测集：允许工具/必用工具/期望结果/泄密）
 - **模型后端**：`mini_agent/llm.py`（OpenAI 兼容 + 超时/重试 + `MockLLM`）
 - **防护**：`.githooks/pre-commit` + `scripts/check_secrets.py`（提交前扫密钥）
 - **知识库**：`knowledge/project.md`、`knowledge/lesson_notes.md`（索引 `knowledge/index.json` 已 gitignore）
@@ -86,7 +87,7 @@
 
 ## 学习进度
 
-- 当前课程：**第6课（多 Agent + MCP）** —— 已完成：6a「多 Agent 分工」（规划者/执行者/评审者 + JSON 消息协议 + 白名单工具）、6b「MCP 接入」（自定义 MCP server `repo-stats` + 客户端适配器挂进 Agent）+ 练习6b（给 server 新增 `git_status` 只读工具）
+- 当前课程：**第7课（可靠性 + 评测）** —— 进行中：已实现 guardrails（路径/密钥）+ audit（JSONL 审计 + 轨迹）+ eval_harness（评测集，实测 3/4 通过，`no_leak` 因越权 `read_file` 判最小权限不过）
 - 已完成：
   - 第1课：真实 API 接通（DeepSeek 兼容）
   - 第2课：多步串行 + run_shell 白名单沙箱
@@ -102,7 +103,7 @@
 
 - `README.md` —— 项目说明与上手教程
 - `AGENTS.md` —— 本文件，教学约定 + 项目现状 + 进度（每次会话先读）
-- `mini_agent/` —— 核心：`agent.py`(主循环) `tools.py`(工具) `llm.py`(模型后端) `knowledge.py`(最小RAG) `roles.py`(多Agent分工) `mcp_client.py`(MCP客户端适配器) `main.py`(CLI)
+- `mini_agent/` —— 核心：`agent.py`(主循环+轨迹) `tools.py`(工具) `llm.py`(模型后端) `knowledge.py`(最小RAG) `roles.py`(多Agent分工) `mcp_client.py`(MCP客户端适配器) `audit.py`(审计) `guardrails.py`(安全策略) `main.py`(CLI)
 - `knowledge/` —— 知识库文档（project.md / lesson_notes.md），索引 index.json 已 gitignore
-- `examples/` —— `mock_demo.py`(离线演示) / `build_kb.py`(建索引) / `multi_agent_demo.py`(多Agent演示) / `mcp_server.py`(自定义MCP server) / `mcp_demo.py`(MCP接入演示)
+- `examples/` —— `mock_demo.py`(离线演示) / `build_kb.py`(建索引) / `multi_agent_demo.py`(多Agent演示) / `mcp_server.py`(自定义MCP server) / `mcp_demo.py`(MCP接入演示) / `eval_harness.py`(评测集)
 - `scripts/` + `.githooks/` —— 敏感信息检查与提交前钩子

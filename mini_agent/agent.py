@@ -1,8 +1,10 @@
 from __future__ import annotations
 import json
+import time
 
 from . import tools
 from .llm import LLM
+from .audit import AuditLogger
 
 DEFAULT_SYSTEM_PROMPT = """你是一个小型自主智能体（Agent），你可以使用多个工具完成任务。
 
@@ -39,7 +41,8 @@ class Agent:
 
     def __init__(self, llm: LLM, max_steps: int = 12, max_context_messages: int = 20,
                  system_prompt: str = DEFAULT_SYSTEM_PROMPT,
-                 allowed_tools: set[str] | None = None):
+                 allowed_tools: set[str] | None = None,
+                 audit: AuditLogger | None = None, max_trace_chars: int = 300):
         self.llm = llm
         self.max_steps = max_steps
         self.max_context_messages = max_context_messages   # 短期上下文"滑动窗口"大小
@@ -47,8 +50,18 @@ class Agent:
         # 工具白名单：None = 允许所有工具；传一个集合则只允许这些（权限最小化的雏形）
         self.allowed_tools = None if allowed_tools is None else set(allowed_tools)
         self.history: list[dict] = []   # 完整对话历史（内部保留，发送给模型时用窗口裁剪）
+        self.audit = audit             # 审计日志器（可选）
+        self.max_trace_chars = max_trace_chars
+        self.trace: list[dict] = []    # 完整轨迹：每步工具调用/结果/耗时（审计&评测用）
         self.verbose = True
         self._warned_trim = False
+
+    def _record_trace(self, event: dict):
+        """把一步记进内嵌轨迹；若挂了审计器，也写入 JSONL 日志。"""
+        event.setdefault("ts", time.strftime("%Y-%m-%d %H:%M:%S"))
+        self.trace.append(event)
+        if self.audit:
+            self.audit.log(event)
 
     def _messages(self) -> list[dict]:
         msgs = [{"role": "system", "content": self.system_prompt}]
@@ -63,16 +76,23 @@ class Agent:
                 self._warned_trim = True
         return msgs + recent
 
-    def _run_tool_calls(self, tool_calls):
+    def _run_tool_calls(self, tool_calls, step: int = 0):
         for call in tool_calls:
             name = call["function"]["name"]
             raw_args = call["function"]["arguments"]
             if self.verbose:
                 print(f"  [tool] {name}({raw_args})")
+            t0 = time.time()
             result = tools.execute_tool(name, raw_args)
+            elapsed = round(time.time() - t0, 3)
             if self.verbose:
                 print(f"  [result] {result[:200]}")
             self.history.append({"role": "tool", "tool_call_id": call["id"], "content": result})
+            self._record_trace({
+                "step": step + 1, "role": "tool", "name": name,
+                "args": raw_args, "result": result[:self.max_trace_chars],
+                "elapsed": elapsed,
+            })
 
     def run(self, user_input: str | None = None, verbose: bool = True) -> str:
         self.verbose = verbose
@@ -93,6 +113,11 @@ class Agent:
                 for call in response["tool_calls"]:
                     if call["function"]["name"] == "final_answer":
                         args = json.loads(call["function"]["arguments"])
+                        self._record_trace({
+                            "step": step + 1, "role": "final_answer",
+                            "name": "final_answer", "args": args,
+                            "result": "structured output returned",
+                        })
                         return json.dumps(args, ensure_ascii=False)   # 结构化结果就是最终答复
 
                 message = {"role": "assistant", "content": response.get("content"),
@@ -100,12 +125,14 @@ class Agent:
                 self.history.append(message)
                 if response.get("content"):
                     print("  [reason]", response["content"][:120])
-                self._run_tool_calls(response["tool_calls"])
+                self._run_tool_calls(response["tool_calls"], step)
                 continue
 
             # 模型给出最终答复，结束循环
             content = response.get("content") or ""
             self.history.append({"role": "assistant", "content": content})
+            self._record_trace({"step": step + 1, "role": "assistant", "name": "(text)",
+                                "args": {}, "result": content[:self.max_trace_chars]})
             return content
 
         return "（已达到最大步数，任务未完成）"

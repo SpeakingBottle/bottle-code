@@ -41,6 +41,7 @@ result.md
 _*.py
 /knowledge/index.json
 /results/
+/logs/
 
 # ---- IDE / 操作系统 / 编辑器 ----
 .idea/
