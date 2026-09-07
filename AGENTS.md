@@ -86,10 +86,7 @@
 
 ## 学习进度
 
-- 当前课程：**第7课（可靠性 + 评测）—— 三关重做**（上一轮产物已全部撤销，代码回到第6课状态）
-  - **7A 权限最小化**：讲 `allowed_tools` 只过滤提示层、执行层不查权限的越权漏洞 → 做：在 `_run_tool_calls` 执行前检查白名单，越权直接拒绝 → 查：重建 `examples/lesson7a_hole.py`（剧本 LLM 报白名单外工具名），验证"越权成功"变"越权被拒" → 复盘：为什么提示层过滤不够？权限检查该在哪一层？
-  - **7B 审计与轨迹**：讲 trace（内存轨迹：每步工具名/参数/结果/耗时）+ audit（落盘 append-only JSONL）→ 做：给 `agent.py` 加 `_record_trace` + 写 `mini_agent/audit.py` → 查：跑一个任务，看 trace 输出和 `logs/agent.jsonl` → 复盘：审计与普通日志的区别？结果为何要截断（max_trace_chars）？
-  - **7C 评测集**：讲评测维度（允许工具/必用工具/期望结果/是否泄密）→ 做：写 `examples/eval_harness.py`（4 个任务：calc / read_readme / write_verify / no_leak）→ 查：跑评测看通过率 → 复盘：评测集怎么设计才不偏科？
+- 当前课程：**第8课（整合 + 打磨）—— 合成 CodeOps Agent**（未开始）
 - 已完成：
   - 第1课：真实 API 接通（DeepSeek 兼容）
   - 第2课：多步串行 + run_shell 白名单沙箱
@@ -97,10 +94,13 @@
   - 第4课：短期上下文滑动窗口 + 长期记忆(remember/recall) + 最小 RAG(kb_search/knowledge.py)
   - 第5课：计划字段 + ReAct 规则 + 思考可见 + 写入后自验证
   - 第6课：多 Agent 分工（规划者/执行者/评审者 + JSON 消息协议 + 白名单工具）+ MCP 接入（自定义 server `repo-stats` + 客户端适配器）+ 练习6b（给 server 新增 `git_status` 只读工具）
+  - 第7课：可靠性 + 评测（三关重做）
+    - **7A 权限最小化** ✅：`mini_agent/agent.py` 的 `_run_tool_calls` 加执行层白名单检查——越权调用不执行，返回 `[SECURITY] 越权调用已拦截 + 允许列表` 并回填 history（同一 tool_call_id）；`examples/lesson7a_hole.py`（剧本 LLM 报白名单外 write_file）验证"越权成功"→"越权被拒"，None/白名单内/默认/越权 四项边界全过；复盘确认三层纵深（提示层软约束 + 执行层硬裁决 + 工具自带防御），`final_answer` 是无条件逃生门（零副作用+防死循环）
+    - **7B 审计与轨迹** ✅：`mini_agent/audit.py`（AuditLogger append-only JSONL + format_trace 轨迹渲染）+ `agent.py` 加 `_record_trace` 单一漏斗（内存 trace + 可选落盘）、`_run_tool_calls` 计时/结果截断/越权事件记录、`run()` 记录 final_answer/纯文本/timeout；`logs/` 已 gitignore；验收：trace 与 `logs/agent.jsonl` 对应、越权 [SECURITY] 事件进审计、audit=None/enabled=False 不写盘、结果截断到 max_trace_chars=300；复盘确认"审计=证据(append-only/结构化/完整含失败) vs 日志=调试(可丢可改)"、"截断结果+保留 args 可重放"
+    - **7C 评测集** ✅：`examples/eval_harness.py`（4 个任务：calc / read_readme / write_verify / no_leak，数据驱动 TASKS + 5 维判定 expect/must_use/file/no_secret/no_abuse + 退出码 0/1 可进 CI）；mock 1/4（正确暴露 mock 能力边界）、真实 API 3/4；no_leak 失败复盘：模型想用 read_file 验证写入被 7A 拦截（最小权限集 {write_file, final_answer}）→ 权限最小化 vs 验证习惯的设计张力；修复两处 Pylance 报错（agent.py `step` 未绑定真 bug：max_steps=0 时 NameError，循环前 `step=0` 修复；eval_harness/lesson7a_hole 的 `reconfigure` 类型误报，`# type: ignore[attr-defined]` 消除）
 - 环境：Python 3.13 虚拟环境 `.venv`；运行激活 venv 或用 `.venv/Scripts/python.exe`；真实 key 在本地 `.env`（已 gitignore）
 - 待补/备注（整理阶段已处理）：
-  - ✅ `run_shell` 白名单已移除 python/py/node（`python -c` = 任意代码执行），只留只读检查命令（git/ls/cat/wc/findstr/where）；剩余限制（cat 读任意文件 / git 仓库操作）留给 7A 系统性解决
-  - 第7课三关的产物（执行层权限检查 / trace+audit / eval_harness）全部留给教学会话，不预实现
+  - ✅ `run_shell` 白名单已移除 python/py/node（`python -c` = 任意代码执行），只留只读检查命令（git/ls/cat/wc/findstr/where）；7A 已解决"工具层"白名单强制执行；命令级剩余限制（cat 读任意文件 / git 仓库操作）仍开放，属更深的命令级沙箱，可留给第8课整合或后续加强
 
 ---
 

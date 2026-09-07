@@ -161,8 +161,22 @@ class AnthropicLLM(LLM):
 
 
 def _extract_expression(text):
-    match = re.search(r"([0-9+\-*/().\s]+)", text)
-    return match.group(1).strip() if match else "2+3"
+    """从用户话里抠出数学表达式：找第一个数字，再向两边扩展合法的数学字符。
+
+    原写法直接匹配"数字+运算符+括号+空格的字符类"，会先抓到表达式前的空格
+    （如"计算 (3+5)*2"会抓到 " "），导致 eval("") 报 invalid syntax。
+    改成"数字为中心向两边扩"。
+    """
+    m = re.search(r"[0-9]", text)
+    if not m:
+        return "2+3"
+    start = m.start()
+    while start > 0 and text[start - 1] in "()+-*/.":
+        start -= 1
+    end = m.end()
+    while end < len(text) and text[end] in "0123456789()+-*/.":
+        end += 1
+    return text[start:end].strip()
 
 
 class MockLLM(LLM):

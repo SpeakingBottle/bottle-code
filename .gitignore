@@ -30,6 +30,8 @@ credentials
 
 # ---- 项目本地数据 / 个人内容 ----
 memory/notebook.md
+# 7B 审计日志：append-only JSONL，不进版本库
+/logs/
 chroma/
 data/
 *.db

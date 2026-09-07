@@ -1,8 +1,10 @@
 from __future__ import annotations
 import json
+import time
 
 from . import tools
 from .llm import LLM
+from .audit import AuditLogger
 
 DEFAULT_SYSTEM_PROMPT = """你是一个小型自主智能体（Agent），你可以使用多个工具完成任务。
 
@@ -39,7 +41,8 @@ class Agent:
 
     def __init__(self, llm: LLM, max_steps: int = 12, max_context_messages: int = 20,
                  system_prompt: str = DEFAULT_SYSTEM_PROMPT,
-                 allowed_tools: set[str] | None = None):
+                 allowed_tools: set[str] | None = None,
+                 audit: AuditLogger | None = None, max_trace_chars: int = 300):
         self.llm = llm
         self.max_steps = max_steps
         self.max_context_messages = max_context_messages   # 短期上下文"滑动窗口"大小
@@ -47,8 +50,22 @@ class Agent:
         # 工具白名单：None = 允许所有工具；传一个集合则只允许这些（权限最小化的雏形）
         self.allowed_tools = None if allowed_tools is None else set(allowed_tools)
         self.history: list[dict] = []   # 完整对话历史（内部保留，发送给模型时用窗口裁剪）
+        self.audit = audit             # 可选审计器：挂了它，事件同时落盘 logs/agent.jsonl
+        self.max_trace_chars = max_trace_chars  # 轨迹里结果截断上限（防膨胀 + 减敏感面）
+        self.trace: list[dict] = []    # 内存轨迹：本次运行的完整时间线（调试/复盘用）
         self.verbose = True
         self._warned_trim = False
+
+    def _record_trace(self, event: dict):
+        """单一漏斗：所有事件先记进内存轨迹；若挂了审计器，再落盘 JSONL。
+
+        事件字段约定：step / role / name / args / result / elapsed；
+        ts（时间戳）在这里统一补，调用点不用关心。
+        """
+        event.setdefault("ts", time.strftime("%Y-%m-%d %H:%M:%S"))
+        self.trace.append(event)
+        if self.audit:
+            self.audit.log(event)
 
     def _messages(self) -> list[dict]:
         msgs = [{"role": "system", "content": self.system_prompt}]
@@ -63,16 +80,31 @@ class Agent:
                 self._warned_trim = True
         return msgs + recent
 
-    def _run_tool_calls(self, tool_calls):
+    def _run_tool_calls(self, tool_calls, step: int = 0):
         for call in tool_calls:
             name = call["function"]["name"]
             raw_args = call["function"]["arguments"]
             if self.verbose:
                 print(f"  [tool] {name}({raw_args})")
-            result = tools.execute_tool(name, raw_args)
+            t0 = time.time()   # 计时从"处理这个调用"开始：越权拒绝(不执行)也记一个近 0 的耗时
+            # —— 权限检查：执行之前，先问一句"这个工具我有权调吗" ——
+            if self.allowed_tools is not None and name not in self.allowed_tools:
+                # 不执行！[SECURITY] 稳定标记供审计过滤；带上允许列表，让模型下一轮能自纠
+                result = json.dumps({
+                    "error": f"[SECURITY] 越权调用已拦截: {name}。允许的工具: {sorted(self.allowed_tools)}",
+                }, ensure_ascii=False)
+            else:
+                result = tools.execute_tool(name, raw_args)
+            elapsed = round(time.time() - t0, 3)
             if self.verbose:
                 print(f"  [result] {result[:200]}")
             self.history.append({"role": "tool", "tool_call_id": call["id"], "content": result})
+            # 记轨迹：结果截断到 max_trace_chars；args 保留原始 JSON 字符串（可重放）
+            self._record_trace({
+                "step": step + 1, "role": "tool", "name": name,
+                "args": raw_args, "result": result[:self.max_trace_chars],
+                "elapsed": elapsed,
+            })
 
     def run(self, user_input: str | None = None, verbose: bool = True) -> str:
         self.verbose = verbose
@@ -82,6 +114,7 @@ class Agent:
         tool_schemas = tools.get_tool_schemas()
         if self.allowed_tools is not None:
             tool_schemas = [s for s in tool_schemas if s["function"]["name"] in self.allowed_tools]
+        step = 0   # 先给 step 一个初值：max_steps=0 时循环不执行，下面的 timeout 事件才不会 NameError
         for step in range(self.max_steps):
             if verbose:
                 print(f"\n--- Step {step + 1} ---")
@@ -93,6 +126,11 @@ class Agent:
                 for call in response["tool_calls"]:
                     if call["function"]["name"] == "final_answer":
                         args = json.loads(call["function"]["arguments"])
+                        self._record_trace({
+                            "step": step + 1, "role": "final_answer",
+                            "name": "final_answer", "args": args,
+                            "result": "结构化输出，run() 返回",
+                        })
                         return json.dumps(args, ensure_ascii=False)   # 结构化结果就是最终答复
 
                 message = {"role": "assistant", "content": response.get("content"),
@@ -100,12 +138,20 @@ class Agent:
                 self.history.append(message)
                 if response.get("content"):
                     print("  [reason]", response["content"][:120])
-                self._run_tool_calls(response["tool_calls"])
+                self._run_tool_calls(response["tool_calls"], step)
                 continue
 
             # 模型给出最终答复，结束循环
             content = response.get("content") or ""
             self.history.append({"role": "assistant", "content": content})
+            self._record_trace({
+                "step": step + 1, "role": "assistant", "name": "(text)",
+                "args": {}, "result": content[:self.max_trace_chars],
+            })
             return content
 
+        self._record_trace({
+            "step": step + 1, "role": "timeout", "name": "(max_steps)",
+            "args": {}, "result": "达到最大步数，任务未完成",
+        })
         return "（已达到最大步数，任务未完成）"
