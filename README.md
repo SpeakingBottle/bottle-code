@@ -41,8 +41,6 @@ agent-learn/
 │   ├── knowledge.py  # 最小版 RAG（切块 + 向量 + 检索）
 │   ├── roles.py      # 多 Agent 分工（规划者/执行者/评审者 + 编排器）
 │   ├── mcp_client.py # MCP 客户端适配器（把外部 MCP 工具挂进 Agent）
-│   ├── audit.py      # 审计日志（JSONL）+ 轨迹格式化
-│   ├── guardrails.py # 安全策略（路径沙箱 / 密钥检测 / 脱敏）
 │   └── main.py       # 命令行入口
 ├── knowledge/        # 知识库文档（用 build_kb.py 建索引）
 ├── examples/
@@ -50,8 +48,7 @@ agent-learn/
 │   ├── build_kb.py         # 建立知识库向量索引
 │   ├── multi_agent_demo.py # 多 Agent 分工演示
 │   ├── mcp_server.py       # 自定义 MCP server（仓库统计）
-│   ├── mcp_demo.py         # 把 MCP 工具接进 Agent 的演示
-│   └── eval_harness.py     # 第7课评测集：可靠性/权限/审计/泄密检查
+│   └── mcp_demo.py         # 把 MCP 工具接进 Agent 的演示
 ├── memory/           # 长期记忆存放处（notebook.md）
 ├── scripts/          # 辅助脚本（如密钥检查）
 ├── .githooks/        # 提交前钩子
@@ -167,20 +164,6 @@ python examples/mcp_demo.py --provider openai-compatible
 ```
 
 > 价值：以后给 CodeOps Agent 加能力（git / 数据库 / 文件系统）只需**挂一个 MCP server**，而不是改 Agent 代码。
-
-### 7. 可靠性 + 评测（`guardrails.py` + `audit.py` + `examples/eval_harness.py`）
-
-从“能跑”到“靠谱”，第7课加了三件套：
-
-- **安全策略（guardrails）**：`safe_path`（路径沙箱，禁越界）、`find_secrets`（检测 `sk-...` 等密钥）、`redact_secrets`（脱敏）。
-- **审计 + 轨迹（audit）**：`Agent` 自动把每一步（工具名/参数/结果/耗时）写进 `trace`，`AuditLogger` 落成 `logs/agent.jsonl`（JSONL，只追加不覆盖）。
-- **评测集（eval_harness）**：一批任务，每项限定**允许工具/必用工具/期望结果/是否泄密**，跑完自动打分，量化“可靠性”。
-
-```
-python examples/eval_harness.py --provider openai-compatible
-```
-
-> 实测：4 个任务中 `calc / read_readme / write_verify` 全过，`no_leak` 因“用了白名单外的 read_file”被判 `least_privilege=false`——正好演示**最小权限是怎么被量出来的**。
 
 ## 动手练习（按难度递进）
 
