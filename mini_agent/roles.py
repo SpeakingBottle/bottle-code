@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 
 from .agent import Agent
+from .audit import AuditLogger
 from .llm import LLM
 
 # ---------------------------------------------------------------------------
-# 各角色的系统提示词：多 Agent 分工的本质 = 给不同“工人”不同的人设 + 规则 + 工具
+# 各角色的系统提示词：多 Agent 分工的本质 = 给不同"工人"不同的人设 + 规则 + 工具
 # ---------------------------------------------------------------------------
 
 PLANNER_PROMPT = """你是「规划者」(Planner)，一个只负责把大目标拆成小步骤、不亲自执行任务的 Agent。
@@ -15,7 +16,7 @@ PLANNER_PROMPT = """你是「规划者」(Planner)，一个只负责把大目标
 规则：
 1. 不要执行任务，只做计划；但可以调用 read_file / list_dir / kb_search 了解背景。
 2. 拆成 1~6 个具体、可直接执行的步骤。
-3. 简单任务（如“算一个表达式”）给 1 步即可；复杂任务要合理分解。
+3. 简单任务（如"算一个表达式"）给 1 步即可；复杂任务要合理分解。
 4. 最后一步必须调用 final_answer：
    - 把步骤放进 steps[]；
    - 把给用户的一句话说明放进 summary。"""
@@ -34,7 +35,7 @@ EXECUTOR_PROMPT = """你是「执行者」(Executor)，负责真正把规划者�
 
 REVIEWER_PROMPT = """你是「评审者」(Reviewer)，负责检查执行者的结果是否真实、可信、符合任务要求。
 
-你会收到“原始任务 + 执行结果”，只做审查，绝不动手改任何文件、不执行任何命令。
+你会收到"原始任务 + 执行结果"，只做审查，绝不动手改任何文件、不执行任何命令。
 规则：
 1. 判断结果是否回答了问题、有没有幻觉/矛盾/偷工减料/副作用。
 2. 结果可信 → verdict=ok；有问题 → verdict=retry。
@@ -45,13 +46,15 @@ REVIEWER_PROMPT = """你是「评审者」(Reviewer)，负责检查执行者的�
 
 
 class RoleAgent(Agent):
-    """多 Agent 里的一个“工人”：固定角色 + 受限工具集 + 独立历史。"""
+    """多 Agent 里的一个"工人"：固定角色 + 受限工具集 + 独立历史。"""
 
     def __init__(self, llm: LLM, name: str, role_prompt: str,
-                 allowed_tools: set[str], max_steps: int = 10):
-        # 任何角色都必须能调用 final_answer 来“收尾”，所以把它强制加进白名单
+                 allowed_tools: set[str], max_steps: int = 10,
+                 audit: AuditLogger | None = None):
+        # 任何角色都必须能调用 final_answer 来"收尾"，所以把它强制加进白名单
         super().__init__(llm, max_steps=max_steps, system_prompt=role_prompt,
-                         allowed_tools=set(allowed_tools) | {"final_answer"})
+                         allowed_tools=set(allowed_tools) | {"final_answer"},
+                         audit=audit)
         self.name = name
 
     def __repr__(self):
@@ -59,28 +62,35 @@ class RoleAgent(Agent):
 
 
 class Orchestrator:
-    """把“规划者/执行者/评审者”三个角色协作起来，靠结构化 JSON 消息在角色之间传递结果。"""
+    """把"规划者/执行者/评审者"三个角色协作起来，靠结构化 JSON 消息在角色之间传递结果。"""
 
-    def __init__(self, llm: LLM, max_retries: int = 2, verbose: bool = True):
+    def __init__(self, llm: LLM, max_retries: int = 2, verbose: bool = True,
+                 extra_executor_tools: set[str] | None = None,
+                 audit: AuditLogger | None = None):
         self.llm = llm
         self.max_retries = max_retries   # 评审不通过时，最多让执行者重试几轮
         self.verbose = verbose
 
         # 分工设计：
-        #   规划者 —— 只用“看”的工具（读文件/列目录/检索知识库），它不该改文件
-        #   执行者 —— 能用“改/跑”的工具（计算/读写文件/跑白名单命令/检索）
-        #   评审者 —— 不给任何工具，纯靠传入的消息做审查（最“干净”的角色）
+        #   规划者 —— 只用"看"的工具（读文件/列目录/检索知识库），它不该改文件
+        #   执行者 —— 能用"改/跑"的工具（计算/读写文件/跑白名单命令/检索）
+        #   评审者 —— 不给任何工具，纯靠传入的消息做审查（最"干净"的角色）
+        # 注入点：extra_executor_tools 让外部（如第8课 CodeOps）给执行者追加 MCP 工具；
+        #         audit 让每个角色都挂上审计（第7课产物）。不传 = 行为与原来完全一致。
+        executor_tools = {"calculator", "list_dir", "read_file", "write_file", "run_shell", "kb_search"}
+        if extra_executor_tools:
+            executor_tools |= set(extra_executor_tools)
         self.planner = RoleAgent(
             llm, "planner", PLANNER_PROMPT,
-            {"list_dir", "read_file", "kb_search"},
+            {"list_dir", "read_file", "kb_search"}, audit=audit,
         )
         self.executor = RoleAgent(
             llm, "executor", EXECUTOR_PROMPT,
-            {"calculator", "list_dir", "read_file", "write_file", "run_shell", "kb_search"},
+            executor_tools, audit=audit,
         )
         self.reviewer = RoleAgent(
             llm, "reviewer", REVIEWER_PROMPT,
-            {"read_file", "list_dir"},  #只读
+            {"read_file", "list_dir"}, audit=audit,  # 只读
         )
 
     def _parse(self, raw: str) -> dict:
@@ -105,7 +115,7 @@ class Orchestrator:
         last_feedback = None
         review_msg = {}
         for attempt in range(self.max_retries + 1):
-            _log(f"\n=== \u2699\ufe0f 执行者（第 {attempt + 1} 轮）===")
+            _log(f"\n=== ⚙️ 执行者（第 {attempt + 1} 轮）===")
             plan_text = "\n".join(f"{i}. {s}" for i, s in enumerate(steps, 1))
             prompt = f"任务：{task}\n计划步骤：\n{plan_text}"
             if last_feedback:

@@ -86,7 +86,11 @@
 
 ## 学习进度
 
-- 当前课程：**第8课（整合 + 打磨）—— 合成 CodeOps Agent**（未开始）
+- 当前课程：**第8课（整合 + 打磨）—— 合成 CodeOps Agent**（进行中）
+  - **8A 合成层** ✅：`mini_agent/codeops.py`（CodeOpsAgent = Orchestrator + MCP repo-stats + 审计，~50 行纯接线）；`roles.py` 加向后兼容注入点（RoleAgent/Orchestrator 透传 `audit`、Orchestrator 支持 `extra_executor_tools`）；真实 API 演示通过：mcp_count_loc 统计 10 文件 1201 行 + kb_search 查部署步骤 + 写出 results/deploy_steps.md（内容准确非编造）+ 评审通过 + 42 条审计事件落盘；mock 回归 + multi_agent_demo 回归通过
+  - **8B 演示** ✅：`examples/codeops_demo.py`（一个任务同时考验 MCP + RAG + 写文件 + 多Agent + 审计）
+  - **8C 打磨** ✅：README 更新（目录结构 + CodeOps 章节 + 进阶能力表）、`RESUME.md`（简历包装：中英 bullet + 面试防身）
+  - 复盘：待做
 - 已完成：
   - 第1课：真实 API 接通（DeepSeek 兼容）
   - 第2课：多步串行 + run_shell 白名单沙箱

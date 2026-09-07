@@ -41,6 +41,8 @@ agent-learn/
 │   ├── knowledge.py  # 最小版 RAG（切块 + 向量 + 检索）
 │   ├── roles.py      # 多 Agent 分工（规划者/执行者/评审者 + 编排器）
 │   ├── mcp_client.py # MCP 客户端适配器（把外部 MCP 工具挂进 Agent）
+│   ├── audit.py      # 审计日志（append-only JSONL + 轨迹渲染）
+│   ├── codeops.py    # ★ CodeOps Agent 合成层（Orchestrator + MCP + 审计）
 │   └── main.py       # 命令行入口
 ├── knowledge/        # 知识库文档（用 build_kb.py 建索引）
 ├── examples/
@@ -48,7 +50,10 @@ agent-learn/
 │   ├── build_kb.py         # 建立知识库向量索引
 │   ├── multi_agent_demo.py # 多 Agent 分工演示
 │   ├── mcp_server.py       # 自定义 MCP server（仓库统计）
-│   └── mcp_demo.py         # 把 MCP 工具接进 Agent 的演示
+│   ├── mcp_demo.py         # 把 MCP 工具接进 Agent 的演示
+│   ├── eval_harness.py     # 评测集：给 Agent 打分（4 任务 × 5 维度）
+│   ├── lesson7a_hole.py    # 7A 漏洞演示：越权调用被拦截
+│   └── codeops_demo.py     # ★ CodeOps Agent 演示（MCP + RAG + 多Agent + 写文件）
 ├── memory/           # 长期记忆存放处（notebook.md）
 ├── scripts/          # 辅助脚本（如密钥检查）
 ├── .githooks/        # 提交前钩子
@@ -165,6 +170,33 @@ python examples/mcp_demo.py --provider openai-compatible
 
 > 价值：以后给 CodeOps Agent 加能力（git / 数据库 / 文件系统）只需**挂一个 MCP server**，而不是改 Agent 代码。
 
+### 7. CodeOps Agent（`codeops.py`）—— 前 6 节的"合体"
+
+把前面所有零件**接线**成一个能写进简历的作品：读代码库 + 查知识库 + 多 Agent 分工 + 自动执行。
+
+```
+用户任务（"统计代码量" / "查部署步骤" / "写检查清单"）
+   ↓
+┌─────────────────────────────────────────────────┐
+│ CodeOpsAgent（合成层：只做"接线"，不重写）         │
+│  ┌───────────────────────────────────────────┐  │
+│  │ Orchestrator（多Agent分工）                │  │
+│  │  规划者 → 执行者 → 评审者 → ok/retry        │  │
+│  └───────────────────────────────────────────┘  │
+│  可靠性层：allowed_tools 白名单 + audit 审计     │
+└─────────────────────────────────────────────────┘
+   ↓ 工具层
+┌──────────┬──────────┬──────────┬──────────────┐
+│ 读代码库   │ 查知识库   │ 自动执行   │ MCP 外部能力  │
+│ list_dir  │ kb_search │ write_file│ mcp_count_loc│
+│ read_file │ (RAG)     │ run_shell │ mcp_git_status│
+│ run_shell │           │ calculator│ mcp_list_files│
+└──────────┴──────────┴──────────┴──────────────┘
+```
+
+- **合成层**（`codeops.py`）只有 ~50 行：注册 MCP 工具 → 追加进执行者白名单 → 给每个角色挂审计 → 暴露一个 `run(task)` 入口。**没有新算法，只有组合**——这就是"复用不是重写"。
+- **演示**：`python examples/codeops_demo.py --provider anthropic`，一个任务同时考验 MCP（统计代码量）+ RAG（查部署步骤）+ 写文件（产出部署清单）+ 多 Agent 分工 + 审计。
+
 ## 动手练习（按难度递进）
 
 1. **加一个新工具**：给它加 `@tool("search_weather", ...)`，然后让它回答“今天北京天气怎样？”（先用 mock 调起来，再换真模型）。
@@ -173,14 +205,23 @@ python examples/mcp_demo.py --provider openai-compatible
 4. **把长期记忆接上向量检索**：把 `recall` 从字符串匹配换成 embedding 相似度检索。
 5. **改用 MCP**：把工具定义从“手写 schema”升级成 MCP（Model Context Protocol）服务器，可以让你的 Agent 直接使用一套标准化的外部工具。
 
-## 进阶方向（学完本项目后值得探索）
+## 本项目已覆盖的”进阶能力”（都在 examples/ 里有可运行演示）
 
-- **MCP**：工具生态标准。你的 Agent 可以连上别人的 MCP server，瞬间获得无数能力。
-- **RAG（检索增强生成）**：把私有知识灌进 Agent，让它基于文档回答。
-- **多 Agent 协作**：用多个各有职责的 Agent 分工（规划者 / 执行者 / 评审者）。
-- **可观测性**：记录每次工具调用、耗时、token，看看 Agent 哪一步在“瞎忙”。
-- **评测**：给 Agent 一组任务，跑批量和成功率，这比“感觉它聪明了”重要得多。
-- **安全与沙箱**：让 Agent 真的能花你的钱、删你的库、访问外网时，权限控制是必修课。
+| 能力 | 对应实现 | 演示 |
+|---|---|---|
+| MCP 工具生态 | `mcp_client.py` + `mcp_server.py` | `mcp_demo.py` |
+| RAG 检索增强 | `knowledge.py` + `kb_search` | `build_kb.py` |
+| 多 Agent 协作 | `roles.py`（规划者/执行者/评审者） | `multi_agent_demo.py` |
+| 可观测性 | `audit.py`（trace + append-only JSONL） | 跑任意 demo 后看 `logs/agent.jsonl` |
+| 评测 | `eval_harness.py`（4 任务 × 5 维度，退出码可进 CI） | `eval_harness.py --provider mock` |
+| 安全与沙箱 | 执行层白名单 + 路径沙箱 + 命令白名单 | `lesson7a_hole.py` |
+| 整合 | `codeops.py`（CodeOps Agent 合成层） | `codeops_demo.py` |
+
+## 继续探索的方向
+
+- **生产级 RAG**：把词频向量换成 embedding（如 `sentence-transformers`），接向量数据库。
+- **流式输出**：把 `chat()` 改成流式，让 Agent 边想边说。
+- **更多 MCP server**：挂上数据库、浏览器、CI 等外部能力，CodeOps Agent 就能真正”运维”。
 
 ## 安全提示（重要）
 
