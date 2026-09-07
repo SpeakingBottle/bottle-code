@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from mini_agent.main import _load_env  # noqa: E402
 _load_env()
 
-from mini_agent.llm import MockLLM, OpenAIChatLLM  # noqa: E402
+from mini_agent.llm import AnthropicLLM, MockLLM, OpenAIChatLLM  # noqa: E402
 from mini_agent.roles import Orchestrator  # noqa: E402
 
 DEFAULT_TASK = "请先用 calculator 算出 (3+5)*2 的结果，再查看项目根目录下有哪些 .py 文件，然后汇总这两条信息。"
@@ -25,12 +25,16 @@ def build_llm(provider: str, model: str | None):
         if not os.environ.get("OPENAI_API_KEY"):
             raise SystemExit("请在 .env 中设置 OPENAI_API_KEY")
         return OpenAIChatLLM(model=model or os.environ.get("OPENAI_MODEL", "deepseek-chat"))
+    if provider == "anthropic":
+        if not (os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")):
+            raise SystemExit("请在 .env 中设置 ANTHROPIC_AUTH_TOKEN")
+        return AnthropicLLM(model=model or os.environ.get("ANTHROPIC_MODEL"))
     raise SystemExit(f"不支持的 provider: {provider}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="多 Agent 分工演示：规划者 / 执行者 / 评审者")
-    parser.add_argument("--provider", choices=["mock", "openai", "openai-compatible"], default="mock")
+    parser.add_argument("--provider", choices=["mock", "openai", "openai-compatible", "anthropic"], default="mock")
     parser.add_argument("--model", default=None)
     parser.add_argument("--task", default=DEFAULT_TASK, help="要交给多 Agent 协作完成的任务")
     parser.add_argument("--max-retries", type=int, default=2, help="评审不通过时最多让执行者重试几轮")

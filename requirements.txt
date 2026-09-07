@@ -1,3 +1,4 @@
 openai>=1.20.0
+anthropic>=0.40.0   # Anthropic Messages API 后端（--provider anthropic）
 python-dotenv>=1.0.0
 mcp>=1.0.0   # 用于自定义 MCP server / 接入第三方 MCP 工具

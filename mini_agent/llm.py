@@ -48,6 +48,118 @@ class OpenAIChatLLM(LLM):
         return data
 
 
+def _to_anthropic_tools(tools):
+    """OpenAI 风格工具声明 → Anthropic 风格（input_schema）。"""
+    return [
+        {
+            "name": t["function"]["name"],
+            "description": t["function"]["description"],
+            "input_schema": t["function"]["parameters"],
+        }
+        for t in tools
+    ]
+
+
+def _to_anthropic_messages(messages):
+    """OpenAI 风格消息 → Anthropic 消息；system 单独抽出来返回。
+
+    Anthropic 没有 role=system / role=tool，而是：
+    - system 提示词放顶层参数
+    - 工具调用是 assistant 消息里的 tool_use 块
+    - 工具结果是 user 消息里的 tool_result 块
+    """
+    system = ""
+    out = []
+    for m in messages:
+        role = m["role"]
+        if role == "system":
+            system += m.get("content", "")
+        elif role == "user":
+            out.append({"role": "user", "content": [{"type": "text", "text": m.get("content", "")}]})
+        elif role == "assistant":
+            blocks = []
+            if m.get("content"):
+                blocks.append({"type": "text", "text": m["content"]})
+            for call in m.get("tool_calls", []):
+                blocks.append({
+                    "type": "tool_use",
+                    "id": call["id"],
+                    "name": call["function"]["name"],
+                    "input": json.loads(call["function"]["arguments"] or "{}"),
+                })
+            out.append({"role": "assistant", "content": blocks})
+        elif role == "tool":
+            out.append({
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": m.get("tool_call_id", ""),
+                    "content": m.get("content", ""),
+                }],
+            })
+    return system, out
+
+
+def _from_anthropic_response(resp):
+    """Anthropic 响应块数组 → OpenAI 风格 dict（content + tool_calls）。
+
+    thinking 块是模型的推理过程，跳过不展示；text 拼成 content，tool_use 转成 tool_calls。
+    """
+    content_parts, tool_calls = [], []
+    for block in resp.content:
+        if block.type == "text":
+            content_parts.append(block.text)
+        elif block.type == "tool_use":
+            tool_calls.append({
+                "id": block.id,
+                "type": "function",
+                "function": {
+                    "name": block.name,
+                    "arguments": json.dumps(block.input, ensure_ascii=False),
+                },
+            })
+    return {
+        "role": "assistant",
+        "content": "".join(content_parts) or None,
+        "tool_calls": tool_calls or None,
+    }
+
+
+class AnthropicLLM(LLM):
+    """调用 Anthropic Messages API（/v1/messages）。
+
+    Agent 内部统一用 OpenAI 风格的消息/工具格式，这里负责双向翻译：
+    - 请求：OpenAI 风格 → Anthropic 的 content 块（text / tool_use / tool_result）
+    - 响应：Anthropic 的块数组 → OpenAI 风格的 content + tool_calls
+    这样 agent.py 完全不用感知后端差异。
+    """
+
+    def __init__(self, model=None, base_url=None, api_key=None, max_tokens=2048):
+        try:
+            from anthropic import Anthropic
+        except ImportError as exc:
+            raise RuntimeError("需要先安装 anthropic：pip install anthropic") from exc
+        self.model = model or os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5")
+        self.max_tokens = max_tokens
+        # Ollama 云 / Anthropic 官方都接受 Authorization: Bearer，所以统一用 auth_token
+        self.client = Anthropic(
+            auth_token=api_key or os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY"),
+            base_url=base_url or os.environ.get("ANTHROPIC_BASE_URL"),
+            timeout=60.0,      # 单次请求最长 60s，防网络抖动超时
+            max_retries=2,     # 网络错误自动重试 2 次
+        )
+
+    def chat(self, messages, tools):
+        system, msgs = _to_anthropic_messages(messages)
+        kwargs = {"model": self.model, "max_tokens": self.max_tokens, "messages": msgs}
+        if system:
+            kwargs["system"] = system
+        if tools:
+            kwargs["tools"] = _to_anthropic_tools(tools)
+        resp = self.client.messages.create(**kwargs)
+        return _from_anthropic_response(resp)
+
+
 def _extract_expression(text):
     match = re.search(r"([0-9+\-*/().\s]+)", text)
     return match.group(1).strip() if match else "2+3"

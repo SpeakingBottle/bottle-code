@@ -36,7 +36,7 @@ def _load_env() -> None:
 _load_env()
 
 from .agent import Agent
-from .llm import MockLLM, OpenAIChatLLM
+from .llm import AnthropicLLM, MockLLM, OpenAIChatLLM
 
 
 def build_agent(provider, model, base_url):
@@ -46,12 +46,16 @@ def build_agent(provider, model, base_url):
         if not os.environ.get("OPENAI_API_KEY"):
             raise SystemExit("请在 .env 中设置 OPENAI_API_KEY（或通过 --api-key 传入）")
         return Agent(OpenAIChatLLM(model=model, base_url=base_url))
+    if provider == "anthropic":
+        if not (os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")):
+            raise SystemExit("请在 .env 中设置 ANTHROPIC_AUTH_TOKEN（或通过 --api-key 传入）")
+        return Agent(AnthropicLLM(model=model, base_url=base_url))
     raise SystemExit(f"不支持的 provider: {provider}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="迷你 Agent 命令行")
-    parser.add_argument("--provider", choices=["mock", "openai", "openai-compatible"], default="mock")
+    parser.add_argument("--provider", choices=["mock", "openai", "openai-compatible", "anthropic"], default="mock")
     parser.add_argument("--model", default=None)
     parser.add_argument("--base-url", default=None)
     parser.add_argument("--max-steps", type=int, default=12)
