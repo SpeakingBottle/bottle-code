@@ -57,7 +57,7 @@
 ## 项目现状（仓库里现在有什么）
 
 - **Agent 主循环**：`mini_agent/agent.py`（工具调用 + 终止工具 + 计划字段 + ReAct 规则）
-- **工具**（`mini_agent/tools.py`）：`calculator` / `list_dir` / `read_file` / `write_file` / `remember` / `recall` / `run_shell`（白名单沙箱）/ `final_answer`（终止工具，结构化输出）/ `kb_search`（RAG 检索）
+- **工具**（`mini_agent/tools.py`）：`calculator` / `list_dir` / `read_file` / `write_file` / `remember` / `recall` / `run_shell`（只读检查白名单）/ `final_answer`（终止工具，结构化输出）/ `kb_search`（RAG 检索）
 - **短期记忆**：`Agent.history` + 滑动窗口（`max_context_messages`），长对话裁成最近 N 条
 - **长期记忆**：`remember`/`recall`（`memory/notebook.md`）+ `kb_search`（`knowledge/` 向量检索）
 - **最小 RAG**：`mini_agent/knowledge.py`（切块 + 词频向量 + 余弦相似度）+ `examples/build_kb.py`（建索引）
@@ -86,15 +86,21 @@
 
 ## 学习进度
 
-- 当前课程：**第6课（多 Agent + MCP）** —— 已完成：6a「多 Agent 分工」（规划者/执行者/评审者 + JSON 消息协议 + 白名单工具）、6b「MCP 接入」（自定义 MCP server `repo-stats` + 客户端适配器挂进 Agent）+ 练习6b（给 server 新增 `git_status` 只读工具）
+- 当前课程：**第7课（可靠性 + 评测）—— 三关重做**（上一轮产物已全部撤销，代码回到第6课状态）
+  - **7A 权限最小化**：讲 `allowed_tools` 只过滤提示层、执行层不查权限的越权漏洞 → 做：在 `_run_tool_calls` 执行前检查白名单，越权直接拒绝 → 查：重建 `examples/lesson7a_hole.py`（剧本 LLM 报白名单外工具名），验证"越权成功"变"越权被拒" → 复盘：为什么提示层过滤不够？权限检查该在哪一层？
+  - **7B 审计与轨迹**：讲 trace（内存轨迹：每步工具名/参数/结果/耗时）+ audit（落盘 append-only JSONL）→ 做：给 `agent.py` 加 `_record_trace` + 写 `mini_agent/audit.py` → 查：跑一个任务，看 trace 输出和 `logs/agent.jsonl` → 复盘：审计与普通日志的区别？结果为何要截断（max_trace_chars）？
+  - **7C 评测集**：讲评测维度（允许工具/必用工具/期望结果/是否泄密）→ 做：写 `examples/eval_harness.py`（4 个任务：calc / read_readme / write_verify / no_leak）→ 查：跑评测看通过率 → 复盘：评测集怎么设计才不偏科？
 - 已完成：
   - 第1课：真实 API 接通（DeepSeek 兼容）
   - 第2课：多步串行 + run_shell 白名单沙箱
   - 第3课：final_answer 终止工具 + 结构化输出 + API 超时/重试
   - 第4课：短期上下文滑动窗口 + 长期记忆(remember/recall) + 最小 RAG(kb_search/knowledge.py)
   - 第5课：计划字段 + ReAct 规则 + 思考可见 + 写入后自验证
+  - 第6课：多 Agent 分工（规划者/执行者/评审者 + JSON 消息协议 + 白名单工具）+ MCP 接入（自定义 server `repo-stats` + 客户端适配器）+ 练习6b（给 server 新增 `git_status` 只读工具）
 - 环境：Python 3.13 虚拟环境 `.venv`；运行激活 venv 或用 `.venv/Scripts/python.exe`；真实 key 在本地 `.env`（已 gitignore）
-- 待补/备注：第6课重点：多 Agent 分工 + 消息协议，以及 MCP 接入与自定义 MCP server
+- 待补/备注（整理阶段已处理）：
+  - ✅ `run_shell` 白名单已移除 python/py/node（`python -c` = 任意代码执行），只留只读检查命令（git/ls/cat/wc/findstr/where）；剩余限制（cat 读任意文件 / git 仓库操作）留给 7A 系统性解决
+  - 第7课三关的产物（执行层权限检查 / trace+audit / eval_harness）全部留给教学会话，不预实现
 
 ---
 

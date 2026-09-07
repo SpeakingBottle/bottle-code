@@ -14,12 +14,13 @@ _REGISTRY: dict[str, "Tool"] = {}
 BASE_DIR = os.path.abspath(os.environ.get("AGENT_WORKDIR", os.getcwd()))
 MEMORY_FILE = os.path.join(BASE_DIR, "memory", "notebook.md")
 
-# run_shell 的"白名单"：只允许执行这几个程序（最简单的沙箱）。
+# run_shell 的"白名单"：只允许执行这几个只读检查程序（最简单的沙箱）。
+# 注意：解释器（python/node）会带来任意代码执行（python -c 等于 RCE），已从白名单移除；
+# 剩余限制：cat 可读任意文件、git 可做仓库操作——第7课 7A 会用执行层权限检查系统性解决。
 # 说明：Windows 下 dir/echo 是 cmd 内置命令，subprocess(shell=False) 找不到；
-# 建议用 ls / cat / findstr / python / py / git / where 等真实可执行程序。
+# 建议用 ls / cat / findstr / git / where 等真实可执行程序。
 ALLOWED_COMMANDS = {
-    "python", "python3", "python.exe", "py",
-    "git", "node", "where", "ls", "cat", "wc", "findstr",
+    "git", "where", "ls", "cat", "wc", "findstr",
 }
 
 
@@ -167,10 +168,10 @@ def recall(keyword: str):
     return json.dumps({"matches": lines}, ensure_ascii=False)
 
 
-@tool("run_shell", "在白名单内执行一条系统命令并返回输出（不支持管道/重定向；用于查看目录、运行脚本、查版本等）", {
+@tool("run_shell", "在白名单内执行一条只读检查命令并返回输出（不支持管道/重定向；用于查看目录、查版本、git 状态等）", {
     "type": "object",
     "properties": {
-        "command": {"type": "string", "description": "要执行的命令，例如 'python --version' 或 'dir'"},
+        "command": {"type": "string", "description": "要执行的命令，例如 'git status' 或 'ls'"},
     },
     "required": ["command"],
 })
