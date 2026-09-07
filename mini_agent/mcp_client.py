@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 
 from . import tools as tool_module
 
@@ -22,18 +21,29 @@ class MCPClient:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace",
         )
+        # 防御性检查：PIPE 模式下 stdin/stdout/stderr 一定非空，显式断言说明这个不变量。
+        # （Pylance 的类型标注不知道这一点，方法里访问时还要再收窄一次，见 _send/_recv。）
+        assert self.proc.stdin is not None
+        assert self.proc.stdout is not None
+        assert self.proc.stderr is not None
         self._id = 0
         self._handshake(protocol_version)
 
     # ---- 底层：发送 + 接收一条 JSON-RPC 消息 ----
     def _send(self, obj):
-        self.proc.stdin.write(json.dumps(obj, ensure_ascii=False) + "\n")
-        self.proc.stdin.flush()
+        stdin = self.proc.stdin
+        assert stdin is not None  # PIPE 模式下一定非空（见 __init__ 的断言）
+        stdin.write(json.dumps(obj, ensure_ascii=False) + "\n")
+        stdin.flush()
 
     def _recv(self) -> dict:
-        line = self.proc.stdout.readline()
+        stdout = self.proc.stdout
+        assert stdout is not None  # PIPE 模式下一定非空（见 __init__ 的断言）
+        line = stdout.readline()
         if not line:
-            err = self.proc.stderr.read() or "未知原因"
+            stderr = self.proc.stderr
+            assert stderr is not None
+            err = stderr.read() or "未知原因"
             raise RuntimeError(f"MCP server 提前退出: {err}")
         return json.loads(line)
 
