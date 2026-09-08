@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import math
 import os
-import re
-from collections import Counter
+
+import numpy as np  # Chroma 的 Embedding 类型就是 numpy 数组（NDArray[float32]）
 
 from .knowledge import chunk_text, tokenize  # 复用第4课的切块/分词
 
@@ -42,9 +42,13 @@ def _get_embedder():
     return _embedder
 
 
-def embed_texts(texts: list[str]) -> list[list[float]]:
-    """把一批文本转成稠密向量（384 维 float32）。"""
-    return [v.tolist() for v in _get_embedder().embed(texts)]
+def embed_texts(texts: list[str]) -> list[np.ndarray]:
+    """把一批文本转成稠密向量（384 维 float32）。
+
+    直接返回 fastembed 的 numpy 数组：Chroma 的 Embedding 类型就是
+    NDArray[float32]，转成 Python list 反而多一次 float64 转换。
+    """
+    return list(_get_embedder().embed(texts))
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +139,7 @@ def _rrf_fuse(ranked_lists: list[list[int]], k: int = 60) -> list[int]:
     for ranked in ranked_lists:
         for rank, idx in enumerate(ranked):
             fused[idx] = fused.get(idx, 0.0) + 1.0 / (k + rank + 1)
-    return sorted(fused, key=fused.get, reverse=True)
+    return sorted(fused, key=lambda i: fused[i], reverse=True)
 
 
 def search(query: str, top_k: int = 3, use_hybrid: bool = True) -> list[dict]:
@@ -151,6 +155,10 @@ def search(query: str, top_k: int = 3, use_hybrid: bool = True) -> list[dict]:
     qvec = embed_texts([query])[0]
     vec_hits = col.query(query_embeddings=[qvec], n_results=top_k * 3,
                          include=["documents", "metadatas", "distances"])
+    # include= 已显式要求这三个字段，Chroma 保证返回；断言让类型检查器也这么认为
+    assert vec_hits["documents"] is not None
+    assert vec_hits["metadatas"] is not None
+    assert vec_hits["distances"] is not None
     docs = vec_hits["documents"][0]
     metas = vec_hits["metadatas"][0]
     dists = vec_hits["distances"][0]
