@@ -232,13 +232,28 @@ def final_answer(summary: str, steps: list[str], used_tools: list[str] | None = 
                        "result": result}, ensure_ascii=False)
 
 
+def _rag_search(query: str, top_k: int = 3) -> list[dict]:
+    """优先用 embedding 版（进阶课1：语义 + 混合检索）；没装依赖/没建索引时回退词频版。
+
+    两个后端接口一致（search(query, top_k)），上层无感知——这就是"依赖倒置"。
+    """
+    try:
+        from . import knowledge_embed
+        results = knowledge_embed.search(query, top_k=top_k)
+        if results:
+            return results
+    except ImportError:
+        pass   # fastembed/chromadb 没装 → 回退词频版
+    return knowledge.search(query, top_k=top_k)
+
+
 @tool("kb_search", "在项目知识库中检索与问题相关的段落（RAG）；当问题涉及项目资料/文档/笔记时使用。返回匹配片段和来源。返回的 text 已包含匹配内容，通常无需再调用 read_file。", {
     "type": "object",
     "properties": {"query": {"type": "string", "description": "检索问题或关键词"}},
     "required": ["query"],
 })
 def kb_search(query: str):
-    results = knowledge.search(query, top_k=3)
+    results = _rag_search(query, top_k=3)
     if not results:
         return json.dumps({"error": "知识库为空或没有匹配内容"}, ensure_ascii=False)
     out = [{"source": r["source"], "score": r["score"], "text": r["text"][:300]} for r in results]

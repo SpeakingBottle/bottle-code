@@ -94,8 +94,13 @@
 
 ## 学习进度
 
-- 当前课程：**进阶课 1（生产级 RAG）**（未开始）—— 8 课主线已完成，进入进阶阶段
+- 当前课程：**进阶课 1（生产级 RAG）**（进行中）—— 8 课主线已完成，进入进阶阶段
   - 进阶路线（已确认，三合一）：①生产级 RAG（embedding + 向量库 + 混合检索 + 检索评估）→ ②CodeOps 网页版（流式 + FastAPI + Vue）→ ③代码 Agent 闭环（写代码→跑测试→改）
+  - **A1 embedding + 向量库** ✅：`mini_agent/knowledge_embed.py`（fastembed `BAAI/bge-small-zh-v1.5` + Chroma PersistentClient，接口与 knowledge.py 一致）；`tools.py` kb_search 优先 embedding 版、缺依赖回退词频版
+  - **A2 混合检索** ✅：手写 BM25 + 向量 RRF 排名融合（`use_hybrid=False` 可退化为纯向量）
+  - **A3 检索评估** ✅：`examples/rag_eval.py`（8 查询 × hit@3，对比三方案）；知识库补全（project.md 加部署步骤、lesson_notes.md 补第4~8课笔记、新增 architecture.md / troubleshooting.md）
+  - **A4 查** ✅：混合版 100% > 词频版 88% = embedding 版 88%；评测逮住两个坏评测项（project.md 无部署内容、lesson_notes.md 无第7课内容）——评测逼你验证对数据的假设；语义改写查询"怎么把服务跑起来"是 embedding 的强项（词频版唯一挂掉的一条）
+  - 复盘：待做
 - 已完成：
   - 第1课：真实 API 接通（DeepSeek 兼容）
   - 第2课：多步串行 + run_shell 白名单沙箱
