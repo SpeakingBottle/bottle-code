@@ -101,7 +101,7 @@
   - 进阶路线（已确认，三合一，即第9~11课）：第9课 生产级 RAG（embedding + 向量库 + 混合检索 + 检索评估）→ 第10课 CodeOps 网页版（流式 + FastAPI + Vue）→ 第11课 代码 Agent 闭环（写代码→跑测试→改）
   - **10A 流式输出** ✅：`llm.py` 加 `chat_stream()`（OpenAI/Anthropic/Mock 三后端：yield 文本增量 + return 完整消息，工具调用轮次不 yield 文本）；`agent.py` 的 `run()` 加 `stream=True`（生成器逐段 yield 增量，`StopIteration.value` 拿最终答复，非流式行为不变）；`examples/stream_demo.py`（mock 打字机效果；真实 API 验证：纯文本流式 + final_answer 结构化收尾都正常）
   - **练习10A 流式事件协议** ✅：`run(stream=True)` 从 yield 裸文本升级为 yield 统一 dict 事件——`{"type":"delta","text":...}` 文本增量 / `{"type":"tool","name","args"}` 工具调用开始 / `{"type":"result","name","text"}` 工具结果，生成器 return 值 = 最终答复；`_run_tool_calls` 返回结果列表 + `stream` 参数（流式下抑制 verbose 重复打印，事件承载展示）；`stream_demo.py` 按事件类型渲染（工具进度在文本前出现）；验收：mock 工具事件先于文本 ✅、纯文本回答无工具事件 ✅、不改 llm.py ✅、非流式回归（mock_demo/eval_harness 1/4）✅、真实 API 验证 calculator 事件 + final_answer 结构化收尾 ✅
-  - 10B FastAPI 后端（SSE 流式接口）：待做
+  - **10B FastAPI 后端（SSE 流式接口）** ✅：`web/server.py`（`POST /api/chat` 把 `run(stream=True)` 的事件逐个转成 SSE `data: {json}\n\n`，补发 `done`（最终答复，从 StopIteration.value 拿）/`error` 事件；`history` 字段支持多轮上下文，只收 user/assistant 文本；CORS 放开跨域；`GET /test.html` 服务浏览器测试页）；`web/test.html`（fetch + ReadableStream 消费 SSE——EventSource 不支持 POST，这是 10C Vue 前端要用的消费方式）；requirements.txt 加 fastapi/uvicorn；验收：curl mock/真实 API 事件流 tool→result→delta→done 顺序正确、history 多轮生效、浏览器全链路渲染成功（截图 web-test.png）
   - 10C Vue 前端（聊天页面）：待做
 - 已完成：
   - 第1课：真实 API 接通（DeepSeek 兼容）
