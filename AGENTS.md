@@ -100,6 +100,7 @@
 - 当前课程：**第10课（CodeOps 网页版）**（进行中）—— 8 课主线已完成，进入第9~11课进阶阶段
   - 进阶路线（已确认，三合一，即第9~11课）：第9课 生产级 RAG（embedding + 向量库 + 混合检索 + 检索评估）→ 第10课 CodeOps 网页版（流式 + FastAPI + Vue）→ 第11课 代码 Agent 闭环（写代码→跑测试→改）
   - **10A 流式输出** ✅：`llm.py` 加 `chat_stream()`（OpenAI/Anthropic/Mock 三后端：yield 文本增量 + return 完整消息，工具调用轮次不 yield 文本）；`agent.py` 的 `run()` 加 `stream=True`（生成器逐段 yield 增量，`StopIteration.value` 拿最终答复，非流式行为不变）；`examples/stream_demo.py`（mock 打字机效果；真实 API 验证：纯文本流式 + final_answer 结构化收尾都正常）
+  - **练习10A 流式事件协议** ✅：`run(stream=True)` 从 yield 裸文本升级为 yield 统一 dict 事件——`{"type":"delta","text":...}` 文本增量 / `{"type":"tool","name","args"}` 工具调用开始 / `{"type":"result","name","text"}` 工具结果，生成器 return 值 = 最终答复；`_run_tool_calls` 返回结果列表 + `stream` 参数（流式下抑制 verbose 重复打印，事件承载展示）；`stream_demo.py` 按事件类型渲染（工具进度在文本前出现）；验收：mock 工具事件先于文本 ✅、纯文本回答无工具事件 ✅、不改 llm.py ✅、非流式回归（mock_demo/eval_harness 1/4）✅、真实 API 验证 calculator 事件 + final_answer 结构化收尾 ✅
   - 10B FastAPI 后端（SSE 流式接口）：待做
   - 10C Vue 前端（聊天页面）：待做
 - 已完成：
