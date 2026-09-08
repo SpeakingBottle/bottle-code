@@ -94,11 +94,8 @@
 
 ## 学习进度
 
-- 当前课程：**第8课（整合 + 打磨）—— 合成 CodeOps Agent**（进行中）
-  - **8A 合成层** ✅：`mini_agent/codeops.py`（CodeOpsAgent = Orchestrator + MCP repo-stats + 审计，~50 行纯接线）；`roles.py` 加向后兼容注入点（RoleAgent/Orchestrator 透传 `audit`、Orchestrator 支持 `extra_executor_tools`）；真实 API 演示通过：mcp_count_loc 统计 10 文件 1201 行 + kb_search 查部署步骤 + 写出 results/deploy_steps.md（内容准确非编造）+ 评审通过 + 42 条审计事件落盘；mock 回归 + multi_agent_demo 回归通过
-  - **8B 演示** ✅：`examples/codeops_demo.py`（一个任务同时考验 MCP + RAG + 写文件 + 多Agent + 审计）
-  - **8C 打磨** ✅：README 更新（目录结构 + CodeOps 章节 + 进阶能力表）
-  - 复盘：待做
+- 当前课程：**进阶课 1（生产级 RAG）**（未开始）—— 8 课主线已完成，进入进阶阶段
+  - 进阶路线（已确认，三合一）：①生产级 RAG（embedding + 向量库 + 混合检索 + 检索评估）→ ②CodeOps 网页版（流式 + FastAPI + Vue）→ ③代码 Agent 闭环（写代码→跑测试→改）
 - 已完成：
   - 第1课：真实 API 接通（DeepSeek 兼容）
   - 第2课：多步串行 + run_shell 白名单沙箱
@@ -110,6 +107,10 @@
     - **7A 权限最小化** ✅：`mini_agent/agent.py` 的 `_run_tool_calls` 加执行层白名单检查——越权调用不执行，返回 `[SECURITY] 越权调用已拦截 + 允许列表` 并回填 history（同一 tool_call_id）；`examples/lesson7a_hole.py`（剧本 LLM 报白名单外 write_file）验证"越权成功"→"越权被拒"，None/白名单内/默认/越权 四项边界全过；复盘确认三层纵深（提示层软约束 + 执行层硬裁决 + 工具自带防御），`final_answer` 是无条件逃生门（零副作用+防死循环）
     - **7B 审计与轨迹** ✅：`mini_agent/audit.py`（AuditLogger append-only JSONL + format_trace 轨迹渲染）+ `agent.py` 加 `_record_trace` 单一漏斗（内存 trace + 可选落盘）、`_run_tool_calls` 计时/结果截断/越权事件记录、`run()` 记录 final_answer/纯文本/timeout；`logs/` 已 gitignore；验收：trace 与 `logs/agent.jsonl` 对应、越权 [SECURITY] 事件进审计、audit=None/enabled=False 不写盘、结果截断到 max_trace_chars=300；复盘确认"审计=证据(append-only/结构化/完整含失败) vs 日志=调试(可丢可改)"、"截断结果+保留 args 可重放"
     - **7C 评测集** ✅：`examples/eval_harness.py`（4 个任务：calc / read_readme / write_verify / no_leak，数据驱动 TASKS + 5 维判定 expect/must_use/file/no_secret/no_abuse + 退出码 0/1 可进 CI）；mock 1/4（正确暴露 mock 能力边界）、真实 API 3/4；no_leak 失败复盘：模型想用 read_file 验证写入被 7A 拦截（最小权限集 {write_file, final_answer}）→ 权限最小化 vs 验证习惯的设计张力；修复两处 Pylance 报错（agent.py `step` 未绑定真 bug：max_steps=0 时 NameError，循环前 `step=0` 修复；eval_harness/lesson7a_hole 的 `reconfigure` 类型误报，`# type: ignore[attr-defined]` 消除）
+  - 第8课：整合 + 打磨（CodeOps Agent 合成层 / 演示 / README / 作品收尾）
+    - **8A 合成层** ✅：`mini_agent/codeops.py`（CodeOpsAgent = Orchestrator + MCP repo-stats + 审计，~50 行纯接线）；`roles.py` 加向后兼容注入点（RoleAgent/Orchestrator 透传 `audit`、Orchestrator 支持 `extra_executor_tools`）；真实 API 演示通过：mcp_count_loc 统计 10 文件 1201 行 + kb_search 查部署步骤 + 写出 results/deploy_steps.md（内容准确非编造）+ 评审通过 + 42 条审计事件落盘；mock 回归 + multi_agent_demo 回归通过
+    - **8B 演示** ✅：`examples/codeops_demo.py`（一个任务同时考验 MCP + RAG + 写文件 + 多Agent + 审计）
+    - **8C 打磨** ✅：README 更新（目录结构 + CodeOps 章节 + 进阶能力表）
 - 环境：Python 3.13 虚拟环境 `.venv`；运行激活 venv 或用 `.venv/Scripts/python.exe`；真实 key 在本地 `.env`（已 gitignore）
 - 待补/备注（整理阶段已处理）：
   - ✅ `run_shell` 白名单已移除 python/py/node（`python -c` = 任意代码执行），只留只读检查命令（git/ls/cat/wc/findstr/where）；7A 已解决"工具层"白名单强制执行；命令级剩余限制（cat 读任意文件 / git 仓库操作）仍开放，属更深的命令级沙箱，可留给第8课整合或后续加强
