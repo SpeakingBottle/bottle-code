@@ -3,12 +3,21 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 
 
 class LLM:
     """所有“模型后端”的公共接口。Agent 只依赖这个接口，不关心背后是 OpenAI、Qwen 还是 mock。"""
 
     def chat(self, messages: list[dict], tools: list[dict]) -> dict:
+        raise NotImplementedError
+
+    def chat_stream(self, messages: list[dict], tools: list[dict]):
+        """流式版 chat：yield 文本增量；耗尽后 .value 是完整消息 dict（与 chat() 同构）。
+
+        关键洞察：流式只对"最终答复"有意义——工具调用是结构化 JSON，不需要逐字展示。
+        但实现上统一走流式更简单：工具调用轮次不 yield 文本，最后 return 完整消息即可。
+        """
         raise NotImplementedError
 
 
@@ -46,6 +55,35 @@ class OpenAIChatLLM(LLM):
                 for c in calls
             ]
         return data
+
+    def chat_stream(self, messages, tools):
+        kwargs = {"model": self.model, "messages": messages, "stream": True}
+        if tools:
+            kwargs["tools"] = tools
+        stream = self.client.chat.completions.create(**kwargs)
+        content_parts: list[str] = []
+        tool_calls: dict[int, dict] = {}   # index → 累积的 tool_call（流式是分片到达的）
+        for chunk in stream:
+            delta = chunk.choices[0].delta
+            if delta.content:
+                content_parts.append(delta.content)
+                yield delta.content
+            if delta.tool_calls:
+                for tc in delta.tool_calls:
+                    slot = tool_calls.setdefault(tc.index, {
+                        "id": "", "type": "function",
+                        "function": {"name": "", "arguments": ""},
+                    })
+                    if tc.id:
+                        slot["id"] = tc.id
+                    if tc.function and tc.function.name:
+                        slot["function"]["name"] += tc.function.name
+                    if tc.function and tc.function.arguments:
+                        slot["function"]["arguments"] += tc.function.arguments
+        msg = {"role": "assistant", "content": "".join(content_parts) or None}
+        if tool_calls:
+            msg["tool_calls"] = [tool_calls[i] for i in sorted(tool_calls)]
+        return msg
 
 
 def _to_anthropic_tools(tools):
@@ -159,6 +197,22 @@ class AnthropicLLM(LLM):
         resp = self.client.messages.create(**kwargs)
         return _from_anthropic_response(resp)
 
+    def chat_stream(self, messages, tools):
+        system, msgs = _to_anthropic_messages(messages)
+        kwargs = {"model": self.model, "max_tokens": self.max_tokens, "messages": msgs}
+        if system:
+            kwargs["system"] = system
+        if tools:
+            kwargs["tools"] = _to_anthropic_tools(tools)
+        with self.client.messages.stream(**kwargs) as stream:
+            for chunk in stream:
+                # 只转发文本增量；tool_use 的 JSON 分片由 SDK 内部累积，最后统一取
+                if chunk.type == "content_block_delta" and chunk.delta.type == "text_delta":
+                    yield chunk.delta.text
+            final = stream.get_final_message()
+        # 完整消息（含 tool_calls）复用非流式的转换逻辑
+        return _from_anthropic_response(final)
+
 
 def _extract_expression(text):
     """从用户话里抠出数学表达式：找第一个数字，再向两边扩展合法的数学字符。
@@ -219,3 +273,12 @@ class MockLLM(LLM):
                 ],
             }
         return {"role": "assistant", "content": f"（mock）你说的是：{user}"}
+
+    def chat_stream(self, messages, tools):
+        resp = self.chat(messages, tools)   # 复用非流式逻辑，保证行为一致
+        content = resp.get("content")
+        if content:
+            for i in range(0, len(content), 2):   # 按 2 字符切块，模拟逐 token
+                yield content[i:i + 2]
+                time.sleep(0.02)   # 打字机延迟：让"流式"肉眼可见
+        return resp

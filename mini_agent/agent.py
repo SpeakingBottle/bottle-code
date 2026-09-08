@@ -106,7 +106,28 @@ class Agent:
                 "elapsed": elapsed,
             })
 
-    def run(self, user_input: str | None = None, verbose: bool = True) -> str:
+    def run(self, user_input: str | None = None, verbose: bool = True, stream: bool = False):
+        """执行任务。
+
+        stream=False（默认）：返回最终答复字符串（与之前完全一致）。
+        stream=True：返回生成器，逐段 yield 文本增量（含中间推理）；
+        耗尽后 .value 是最终答复字符串。供网页版逐字展示。
+        """
+        if stream:
+            return self._run(user_input, verbose, stream=True)
+        gen = self._run(user_input, verbose, stream=False)
+        try:
+            while True:
+                next(gen)   # 非流式：不转发增量，跑完即可
+        except StopIteration as e:
+            return e.value   # 生成器的 return 值 = 最终答复
+
+    def _run(self, user_input, verbose, stream):
+        """核心循环（生成器）。stream=True 时 yield 文本增量，最后 return 最终答复。
+
+        流式与非流式共用这一个循环：唯一区别是调 chat_stream（yield 增量）
+        还是 chat（一次性返回）。工具调用轮次不 yield 文本，行为与非流式一致。
+        """
         self.verbose = verbose
         if user_input is not None:
             self.history.append({"role": "user", "content": user_input})
@@ -118,9 +139,16 @@ class Agent:
         for step in range(self.max_steps):
             if verbose:
                 print(f"\n--- Step {step + 1} ---")
-            response = self.llm.chat(self._messages(), tool_schemas)
+            if stream:
+                gen = self.llm.chat_stream(self._messages(), tool_schemas)
+                try:
+                    while True:
+                        yield next(gen)   # 逐段转发文本增量
+                except StopIteration as e:
+                    response = e.value   # 生成器 return 的完整消息（含 tool_calls）
+            else:
+                response = self.llm.chat(self._messages(), tool_schemas)
 
-            # 在 run() 的循环里，处理 tool_calls 之前加：
             if response.get("tool_calls"):
                 # 判断是否是"终止工具"
                 for call in response["tool_calls"]:
@@ -136,7 +164,8 @@ class Agent:
                 message = {"role": "assistant", "content": response.get("content"),
                         "tool_calls": response["tool_calls"]}
                 self.history.append(message)
-                if response.get("content"):
+                # 流式模式下推理文本已经 yield 给调用方了，这里不再重复打印
+                if response.get("content") and not stream:
                     print("  [reason]", response["content"][:120])
                 self._run_tool_calls(response["tool_calls"], step)
                 continue

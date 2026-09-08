@@ -97,13 +97,11 @@
 
 ## 学习进度
 
-- 当前课程：**第9课（生产级 RAG）**（进行中）—— 8 课主线已完成，进入第9~11课进阶阶段
+- 当前课程：**第10课（CodeOps 网页版）**（进行中）—— 8 课主线已完成，进入第9~11课进阶阶段
   - 进阶路线（已确认，三合一，即第9~11课）：第9课 生产级 RAG（embedding + 向量库 + 混合检索 + 检索评估）→ 第10课 CodeOps 网页版（流式 + FastAPI + Vue）→ 第11课 代码 Agent 闭环（写代码→跑测试→改）
-  - **9A embedding + 向量库** ✅：`mini_agent/knowledge_embed.py`（fastembed `BAAI/bge-small-zh-v1.5` + Chroma PersistentClient，接口与 knowledge.py 一致）；`tools.py` kb_search 优先 embedding 版、缺依赖回退词频版
-  - **9B 混合检索** ✅：手写 BM25 + 向量 RRF 排名融合（`use_hybrid=False` 可退化为纯向量）
-  - **9C 检索评估** ✅：`examples/rag_eval.py`（8 查询 × hit@3，对比三方案）；知识库补全（project.md 加部署步骤、lesson_notes.md 补第4~8课笔记、新增 architecture.md / troubleshooting.md）
-  - **9D 查** ✅：混合版 100% > 词频版 88% = embedding 版 88%；评测逮住两个坏评测项（project.md 无部署内容、lesson_notes.md 无第7课内容）——评测逼你验证对数据的假设；语义改写查询"怎么把服务跑起来"是 embedding 的强项（词频版唯一挂掉的一条）
-  - 复盘：待做
+  - **10A 流式输出** ✅：`llm.py` 加 `chat_stream()`（OpenAI/Anthropic/Mock 三后端：yield 文本增量 + return 完整消息，工具调用轮次不 yield 文本）；`agent.py` 的 `run()` 加 `stream=True`（生成器逐段 yield 增量，`StopIteration.value` 拿最终答复，非流式行为不变）；`examples/stream_demo.py`（mock 打字机效果；真实 API 验证：纯文本流式 + final_answer 结构化收尾都正常）
+  - 10B FastAPI 后端（SSE 流式接口）：待做
+  - 10C Vue 前端（聊天页面）：待做
 - 已完成：
   - 第1课：真实 API 接通（DeepSeek 兼容）
   - 第2课：多步串行 + run_shell 白名单沙箱
@@ -119,6 +117,12 @@
     - **8A 合成层** ✅：`mini_agent/codeops.py`（CodeOpsAgent = Orchestrator + MCP repo-stats + 审计，~50 行纯接线）；`roles.py` 加向后兼容注入点（RoleAgent/Orchestrator 透传 `audit`、Orchestrator 支持 `extra_executor_tools`）；真实 API 演示通过：mcp_count_loc 统计 10 文件 1201 行 + kb_search 查部署步骤 + 写出 results/deploy_steps.md（内容准确非编造）+ 评审通过 + 42 条审计事件落盘；mock 回归 + multi_agent_demo 回归通过
     - **8B 演示** ✅：`examples/codeops_demo.py`（一个任务同时考验 MCP + RAG + 写文件 + 多Agent + 审计）
     - **8C 打磨** ✅：README 更新（目录结构 + CodeOps 章节 + 进阶能力表）
+  - 第9课：生产级 RAG（embedding + 向量库 + 混合检索 + 检索评估）
+    - **9A embedding + 向量库** ✅：`mini_agent/knowledge_embed.py`（fastembed `BAAI/bge-small-zh-v1.5` + Chroma PersistentClient，接口与 knowledge.py 一致）；`tools.py` kb_search 优先 embedding 版、缺依赖回退词频版
+    - **9B 混合检索** ✅：手写 BM25 + 向量 RRF 排名融合（`use_hybrid=False` 可退化为纯向量）
+    - **9C 检索评估** ✅：`examples/rag_eval.py`（8 查询 × hit@3，对比三方案）；知识库补全（project.md 加部署步骤、lesson_notes.md 补第4~8课笔记、新增 architecture.md / troubleshooting.md）
+    - **9D 查** ✅：混合版 100% > 词频版 88% = embedding 版 88%；评测逮住两个坏评测项（project.md 无部署内容、lesson_notes.md 无第7课内容）——评测逼你验证对数据的假设；语义改写查询"怎么把服务跑起来"是 embedding 的强项（词频版唯一挂掉的一条）
+    - 复盘：待做
 - 环境：Python 3.13 虚拟环境 `.venv`；运行激活 venv 或用 `.venv/Scripts/python.exe`；真实 key 在本地 `.env`（已 gitignore）
 - 待补/备注（整理阶段已处理）：
   - ✅ `run_shell` 白名单已移除 python/py/node（`python -c` = 任意代码执行），只留只读检查命令（git/ls/cat/wc/findstr/where）；7A 已解决"工具层"白名单强制执行；命令级剩余限制（cat 读任意文件 / git 仓库操作）仍开放，属更深的命令级沙箱，可留给第8课整合或后续加强
