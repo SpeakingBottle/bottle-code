@@ -172,7 +172,7 @@ python examples/mcp_demo.py --provider openai-compatible
 
 ### 7. CodeOps Agent（`codeops.py`）—— 前 6 节的"合体"
 
-把前面所有零件**接线**成一个能写进简历的作品：读代码库 + 查知识库 + 多 Agent 分工 + 自动执行。
+把前面所有零件**接线**成一个完整可运行的作品：读代码库 + 查知识库 + 多 Agent 分工 + 自动执行。
 
 ```
 用户任务（"统计代码量" / "查部署步骤" / "写检查清单"）

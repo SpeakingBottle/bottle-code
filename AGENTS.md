@@ -13,7 +13,7 @@
 - 语言主线：**Python**
 - 模型：**接真实 API**（Anthropic Messages API 格式，当前用 Ollama 云，模型 `deepseek-v4-flash:0731`，与 Claude Code 会话同源；`llm.py` 同时保留 OpenAI 兼容后端）
 - 时间投入：**冲刺型**（每周 >=6h）
-- 目标：做出**能写进简历的作品**
+- 目标：做出一个**完整、可运行、可展示的 Agent 作品**（重在把八课知识真正合体）
 - 感兴趣主题：**知识库问答（RAG）/ 多 Agent 协作 / 代码与运维自动化**
 - 最终作品方向：**CodeOps Agent**（读代码库 + 查知识库 + 多 Agent 分工 + 自动执行）
 
@@ -38,6 +38,14 @@
 
 ### 4. 复盘
 - 追问一句"为什么这样写 / 换个场景会怎样"，把技巧沉淀成可迁移的心智模型。
+
+---
+
+## 工作约定（git）
+
+- **每次变更后自动提交**：每完成一个有意义的变更（新功能 / 修复 / 文档更新 / 清理），自动执行 `git add` + `git commit`，不要堆积改动。
+- 提交信息用**中文**，遵循 conventional commits 前缀（`feat:` / `fix:` / `refactor:` / `docs:` / `chore:`），正文简述改了什么、为什么。
+- `.githooks/pre-commit` 会自动跑密钥扫描：若扫描失败，先定位并修复再提交，不要 `--no-verify` 跳过。
 
 ---
 
@@ -80,7 +88,7 @@
 | 第5课 | 规划 + ReAct | 计划字段 + ReAct 规则 + 思考可见 + 写入后自验证 |
 | 第6课 | 多 Agent + MCP | 规划者/执行者/评审者分工 + 接入/编写自定义 MCP |
 | 第7课 | 可靠性 + 评测 | 权限最小化、沙箱、审计日志、轨迹观测、任务评测集 |
-| 第8课 | 整合 + 打磨 | 合成 CodeOps Agent：README、架构图、演示、部署、简历包装 |
+| 第8课 | 整合 + 打磨 | 合成 CodeOps Agent：合成层、演示、README、作品收尾 |
 
 ---
 
@@ -89,7 +97,7 @@
 - 当前课程：**第8课（整合 + 打磨）—— 合成 CodeOps Agent**（进行中）
   - **8A 合成层** ✅：`mini_agent/codeops.py`（CodeOpsAgent = Orchestrator + MCP repo-stats + 审计，~50 行纯接线）；`roles.py` 加向后兼容注入点（RoleAgent/Orchestrator 透传 `audit`、Orchestrator 支持 `extra_executor_tools`）；真实 API 演示通过：mcp_count_loc 统计 10 文件 1201 行 + kb_search 查部署步骤 + 写出 results/deploy_steps.md（内容准确非编造）+ 评审通过 + 42 条审计事件落盘；mock 回归 + multi_agent_demo 回归通过
   - **8B 演示** ✅：`examples/codeops_demo.py`（一个任务同时考验 MCP + RAG + 写文件 + 多Agent + 审计）
-  - **8C 打磨** ✅：README 更新（目录结构 + CodeOps 章节 + 进阶能力表）、`RESUME.md`（简历包装：中英 bullet + 面试防身）
+  - **8C 打磨** ✅：README 更新（目录结构 + CodeOps 章节 + 进阶能力表）
   - 复盘：待做
 - 已完成：
   - 第1课：真实 API 接通（DeepSeek 兼容）
