@@ -89,17 +89,20 @@
 | 第6课 | 多 Agent + MCP | 规划者/执行者/评审者分工 + 接入/编写自定义 MCP |
 | 第7课 | 可靠性 + 评测 | 权限最小化、沙箱、审计日志、轨迹观测、任务评测集 |
 | 第8课 | 整合 + 打磨 | 合成 CodeOps Agent：合成层、演示、README、作品收尾 |
+| 第9课 | 生产级 RAG | embedding 向量化 + 向量库(Chroma) + 混合检索(BM25+向量 RRF) + 检索评估(hit@k) |
+| 第10课 | CodeOps 网页版 | 流式输出 + FastAPI 后端 + Vue 前端，把 CodeOps Agent 变成可交互网页 |
+| 第11课 | 代码 Agent 闭环 | 写代码 → 跑测试 → 改，让 Agent 自主完成编码任务闭环 |
 
 ---
 
 ## 学习进度
 
-- 当前课程：**进阶课 1（生产级 RAG）**（进行中）—— 8 课主线已完成，进入进阶阶段
-  - 进阶路线（已确认，三合一）：①生产级 RAG（embedding + 向量库 + 混合检索 + 检索评估）→ ②CodeOps 网页版（流式 + FastAPI + Vue）→ ③代码 Agent 闭环（写代码→跑测试→改）
-  - **A1 embedding + 向量库** ✅：`mini_agent/knowledge_embed.py`（fastembed `BAAI/bge-small-zh-v1.5` + Chroma PersistentClient，接口与 knowledge.py 一致）；`tools.py` kb_search 优先 embedding 版、缺依赖回退词频版
-  - **A2 混合检索** ✅：手写 BM25 + 向量 RRF 排名融合（`use_hybrid=False` 可退化为纯向量）
-  - **A3 检索评估** ✅：`examples/rag_eval.py`（8 查询 × hit@3，对比三方案）；知识库补全（project.md 加部署步骤、lesson_notes.md 补第4~8课笔记、新增 architecture.md / troubleshooting.md）
-  - **A4 查** ✅：混合版 100% > 词频版 88% = embedding 版 88%；评测逮住两个坏评测项（project.md 无部署内容、lesson_notes.md 无第7课内容）——评测逼你验证对数据的假设；语义改写查询"怎么把服务跑起来"是 embedding 的强项（词频版唯一挂掉的一条）
+- 当前课程：**第9课（生产级 RAG）**（进行中）—— 8 课主线已完成，进入第9~11课进阶阶段
+  - 进阶路线（已确认，三合一，即第9~11课）：第9课 生产级 RAG（embedding + 向量库 + 混合检索 + 检索评估）→ 第10课 CodeOps 网页版（流式 + FastAPI + Vue）→ 第11课 代码 Agent 闭环（写代码→跑测试→改）
+  - **9A embedding + 向量库** ✅：`mini_agent/knowledge_embed.py`（fastembed `BAAI/bge-small-zh-v1.5` + Chroma PersistentClient，接口与 knowledge.py 一致）；`tools.py` kb_search 优先 embedding 版、缺依赖回退词频版
+  - **9B 混合检索** ✅：手写 BM25 + 向量 RRF 排名融合（`use_hybrid=False` 可退化为纯向量）
+  - **9C 检索评估** ✅：`examples/rag_eval.py`（8 查询 × hit@3，对比三方案）；知识库补全（project.md 加部署步骤、lesson_notes.md 补第4~8课笔记、新增 architecture.md / troubleshooting.md）
+  - **9D 查** ✅：混合版 100% > 词频版 88% = embedding 版 88%；评测逮住两个坏评测项（project.md 无部署内容、lesson_notes.md 无第7课内容）——评测逼你验证对数据的假设；语义改写查询"怎么把服务跑起来"是 embedding 的强项（词频版唯一挂掉的一条）
   - 复盘：待做
 - 已完成：
   - 第1课：真实 API 接通（DeepSeek 兼容）
@@ -126,7 +129,7 @@
 
 - `README.md` —— 项目说明与上手教程
 - `AGENTS.md` —— 本文件，教学约定 + 项目现状 + 进度（每次会话先读）
-- `mini_agent/` —— 核心：`agent.py`(主循环) `tools.py`(工具) `llm.py`(模型后端) `knowledge.py`(最小RAG) `roles.py`(多Agent分工) `mcp_client.py`(MCP客户端适配器) `main.py`(CLI)
-- `knowledge/` —— 知识库文档（project.md / lesson_notes.md），索引 index.json 已 gitignore
-- `examples/` —— `mock_demo.py`(离线演示) / `build_kb.py`(建索引) / `multi_agent_demo.py`(多Agent演示) / `mcp_server.py`(自定义MCP server) / `mcp_demo.py`(MCP接入演示)
+- `mini_agent/` —— 核心：`agent.py`(主循环) `tools.py`(工具) `llm.py`(模型后端) `knowledge.py`(最小RAG) `knowledge_embed.py`(第9课 embedding版RAG) `roles.py`(多Agent分工) `mcp_client.py`(MCP客户端适配器) `main.py`(CLI)
+- `knowledge/` —— 知识库文档（project.md / lesson_notes.md / architecture.md / troubleshooting.md），索引 index.json 已 gitignore
+- `examples/` —— `mock_demo.py`(离线演示) / `build_kb.py`(建索引) / `multi_agent_demo.py`(多Agent演示) / `mcp_server.py`(自定义MCP server) / `mcp_demo.py`(MCP接入演示) / `rag_eval.py`(第9课检索评估)
 - `scripts/` + `.githooks/` —— 敏感信息检查与提交前钩子

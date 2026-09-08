@@ -1,4 +1,4 @@
-"""进阶课1 · 检索质量评估 —— 对比 词频版 vs embedding版 vs 混合版
+"""第9课 · 检索质量评估 —— 对比 词频版 vs embedding版 vs 混合版
 
 评测集：一组"查询 → 期望命中的文档"，指标 hit@k（期望文档是否出现在前 k 名）。
 没有评估，你分不清新旧方案谁好——这是第7课评测思想在 RAG 上的复用。
@@ -19,7 +19,7 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from mini_agent import knowledge  # noqa: E402   # 词频版（第4课）
-from mini_agent import knowledge_embed  # noqa: E402   # embedding 版（进阶课1）
+from mini_agent import knowledge_embed  # noqa: E402   # embedding 版（第9课）
 
 # 评测集：查询 → 期望命中的文档（knowledge/ 下有哪些文件，就按内容设计查询）
 # 4 份文档、10+ 个块，top-3 才有区分度——如果知识库太小，任何方案都是 100%，评测就失去意义

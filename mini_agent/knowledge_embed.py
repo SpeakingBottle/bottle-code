@@ -1,4 +1,4 @@
-"""进阶课1 · 生产级 RAG —— embedding + 向量库 + 混合检索
+"""第9课 · 生产级 RAG —— embedding + 向量库 + 混合检索
 
 与 knowledge.py（词频版）暴露【完全相同的接口】：build_index / load_index / search。
 上层（tools.py 的 kb_search、Agent）只依赖接口，不依赖实现——这就是"依赖倒置"。

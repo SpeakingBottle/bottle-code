@@ -233,7 +233,7 @@ def final_answer(summary: str, steps: list[str], used_tools: list[str] | None = 
 
 
 def _rag_search(query: str, top_k: int = 3) -> list[dict]:
-    """优先用 embedding 版（进阶课1：语义 + 混合检索）；没装依赖/没建索引时回退词频版。
+    """优先用 embedding 版（第9课：语义 + 混合检索）；没装依赖/没建索引时回退词频版。
 
     两个后端接口一致（search(query, top_k)），上层无感知——这就是"依赖倒置"。
     """
