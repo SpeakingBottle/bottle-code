@@ -80,11 +80,17 @@ class Agent:
                 self._warned_trim = True
         return msgs + recent
 
-    def _run_tool_calls(self, tool_calls, step: int = 0):
+    def _run_tool_calls(self, tool_calls, step: int = 0, stream: bool = False) -> list[str]:
+        """执行一批工具调用，返回每个调用的结果（流式模式下由 _run 广播成 result 事件）。
+
+        stream=True 时抑制 verbose 打印：流式模式下 [tool]/[result] 由事件承载，
+        再打印一遍会重复（调用方拿到事件自己渲染）。
+        """
+        results: list[str] = []
         for call in tool_calls:
             name = call["function"]["name"]
             raw_args = call["function"]["arguments"]
-            if self.verbose:
+            if self.verbose and not stream:
                 print(f"  [tool] {name}({raw_args})")
             t0 = time.time()   # 计时从"处理这个调用"开始：越权拒绝(不执行)也记一个近 0 的耗时
             # —— 权限检查：执行之前，先问一句"这个工具我有权调吗" ——
@@ -95,8 +101,9 @@ class Agent:
                 }, ensure_ascii=False)
             else:
                 result = tools.execute_tool(name, raw_args)
+            results.append(result)
             elapsed = round(time.time() - t0, 3)
-            if self.verbose:
+            if self.verbose and not stream:
                 print(f"  [result] {result[:200]}")
             self.history.append({"role": "tool", "tool_call_id": call["id"], "content": result})
             # 记轨迹：结果截断到 max_trace_chars；args 保留原始 JSON 字符串（可重放）
@@ -105,13 +112,14 @@ class Agent:
                 "args": raw_args, "result": result[:self.max_trace_chars],
                 "elapsed": elapsed,
             })
+        return results
 
     def run(self, user_input: str | None = None, verbose: bool = True, stream: bool = False):
         """执行任务。
 
         stream=False（默认）：返回最终答复字符串（与之前完全一致）。
-        stream=True：返回生成器，逐段 yield 文本增量（含中间推理）；
-        耗尽后 .value 是最终答复字符串。供网页版逐字展示。
+        stream=True：返回生成器，逐段 yield 事件（协议见 _run 的 docstring）；
+        耗尽后 .value 是最终答复字符串。供网页版逐字展示 + 工具进度渲染。
         """
         if stream:
             return self._run(user_input, verbose, stream=True)
@@ -123,7 +131,13 @@ class Agent:
             return e.value   # 生成器的 return 值 = 最终答复
 
     def _run(self, user_input, verbose, stream):
-        """核心循环（生成器）。stream=True 时 yield 文本增量，最后 return 最终答复。
+        """核心循环（生成器）。stream=True 时 yield 事件，最后 return 最终答复。
+
+        流式事件协议（run(stream=True) yield 的每个 dict）：
+          {"type": "delta", "text": str}     —— 文本增量（模型生成的内容）
+          {"type": "tool", "name": str, "args": str}    —— 工具调用开始
+          {"type": "result", "name": str, "text": str} —— 工具结果
+        生成器 return 值 = 最终答复字符串（StopIteration.value）。
 
         流式与非流式共用这一个循环：唯一区别是调 chat_stream（yield 增量）
         还是 chat（一次性返回）。工具调用轮次不 yield 文本，行为与非流式一致。
@@ -143,7 +157,7 @@ class Agent:
                 gen = self.llm.chat_stream(self._messages(), tool_schemas)
                 try:
                     while True:
-                        yield next(gen)   # 逐段转发文本增量
+                        yield {"type": "delta", "text": next(gen)}   # 文本增量包成事件
                 except StopIteration as e:
                     response = e.value   # 生成器 return 的完整消息（含 tool_calls）
             else:
@@ -167,7 +181,15 @@ class Agent:
                 # 流式模式下推理文本已经 yield 给调用方了，这里不再重复打印
                 if response.get("content") and not stream:
                     print("  [reason]", response["content"][:120])
-                self._run_tool_calls(response["tool_calls"], step)
+                # 工具事件：执行前先广播"要调什么"，执行后再广播"结果是什么"
+                if stream:
+                    for call in response["tool_calls"]:
+                        yield {"type": "tool", "name": call["function"]["name"],
+                               "args": call["function"]["arguments"]}
+                results = self._run_tool_calls(response["tool_calls"], step, stream=stream)
+                if stream:
+                    for call, result in zip(response["tool_calls"], results):
+                        yield {"type": "result", "name": call["function"]["name"], "text": result}
                 continue
 
             # 模型给出最终答复，结束循环
