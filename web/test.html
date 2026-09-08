@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CodeOps Agent 网页版 · 接口测试</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+  #log { white-space: pre-wrap; background: #f6f8fa; border: 1px solid #ddd; border-radius: 8px;
+         padding: 1rem; min-height: 200px; margin-top: 1rem; }
+  .tool { color: #b8860b; }
+  .result { color: #2e7d32; }
+  .done { color: #1565c0; font-weight: bold; }
+  .error { color: #c62828; }
+  input { width: 70%; padding: .5rem; }
+  button { padding: .5rem 1rem; }
+</style>
+</head>
+<body>
+<h1>CodeOps Agent 网页版 · 接口测试</h1>
+<p>这个页面直接消费 <code>POST /api/chat</code> 的 SSE 流，验证后端事件协议。
+   10C 的 Vue 前端会用同样的方式渲染。</p>
+<input id="prompt" placeholder="输入任务，例如：帮我计算 2+3 的结果" value="帮我计算 2+3 的结果">
+<button id="send">发送</button>
+<div id="log">（事件流会显示在这里）</div>
+
+<script>
+const log = document.getElementById("log");
+const prompt = document.getElementById("prompt");
+const send = document.getElementById("send");
+
+function append(text, cls) {
+  const span = document.createElement("span");
+  if (cls) span.className = cls;
+  span.textContent = text;
+  log.appendChild(span);
+}
+
+send.onclick = async () => {
+  log.textContent = "";
+  const resp = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: prompt.value }),
+  });
+  if (!resp.ok) { append("HTTP " + resp.status + "\n", "error"); return; }
+
+  // SSE over fetch：读流 → 按空行切块 → 每块是 "data: {...}"
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const blocks = buf.split("\n\n");
+    buf = blocks.pop();               // 最后一块可能不完整，留到下次
+    for (const block of blocks) {
+      const line = block.trim();
+      if (!line.startsWith("data:")) continue;
+      const ev = JSON.parse(line.slice(5).trim());
+      if (ev.type === "delta") append(ev.text);
+      else if (ev.type === "tool") append("\n[tool] " + ev.name + "(" + ev.args + ")\n", "tool");
+      else if (ev.type === "result") append("[result] " + ev.text.slice(0, 200) + "\n", "result");
+      else if (ev.type === "done") append("\n最终答复: " + ev.text + "\n", "done");
+      else if (ev.type === "error") append("\n错误: " + ev.text + "\n", "error");
+    }
+  }
+};
+</script>
+</body>
+</html>

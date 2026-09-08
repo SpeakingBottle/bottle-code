@@ -4,3 +4,5 @@ python-dotenv>=1.0.0
 mcp>=1.0.0   # 用于自定义 MCP server / 接入第三方 MCP 工具
 fastembed>=0.8.0   # 第9课：embedding 向量化（ONNX 轻量，无 torch）
 chromadb>=1.5.0    # 第9课：向量数据库（持久化 + ANN 检索）
+fastapi>=0.141.0   # 第10课：网页版后端（SSE 流式接口）
+uvicorn>=0.52.0    # 第10课：ASGI 服务器（跑 FastAPI）
