@@ -1,4 +1,4 @@
-"""第10课 · CodeOps 网页版后端 —— FastAPI + SSE 流式接口
+"""第10课 · Bottle Code 网页版后端 —— FastAPI + SSE 流式接口
 
 把第10A 的流式事件协议（delta/tool/result）暴露成 HTTP 接口：
 前端 POST /api/chat，后端把 Agent 的事件逐个转成 SSE 推给前端。
@@ -164,7 +164,7 @@ class RenameRequest(BaseModel):
 
 
 def make_app(provider: str = "anthropic") -> FastAPI:
-    app = FastAPI(title="CodeOps Agent 网页版", version="0.1.0")
+    app = FastAPI(title="Bottle Code 网页版", version="0.1.0")
 
     # 会话存储（⑤）：三份数据 + 内存 Agent 实例。
     #   session_meta  sid → {name, created_at, updated_at}（会话列表展示用）
@@ -187,7 +187,7 @@ def make_app(provider: str = "anthropic") -> FastAPI:
 
     @app.get("/")
     def root():
-        return {"name": "CodeOps Agent 网页版", "provider": provider,
+        return {"name": "Bottle Code 网页版", "provider": provider,
                 "endpoints": ["POST /api/chat（SSE 流式）", "GET /test.html（浏览器测试页）"]}
 
     @app.get("/test.html")
@@ -319,7 +319,7 @@ def make_app(provider: str = "anthropic") -> FastAPI:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="CodeOps Agent 网页版后端")
+    parser = argparse.ArgumentParser(description="Bottle Code 网页版后端")
     parser.add_argument("--provider", default="anthropic", choices=["mock", "anthropic", "openai"])
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()

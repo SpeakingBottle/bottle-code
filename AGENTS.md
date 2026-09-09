@@ -15,7 +15,7 @@
 - 时间投入：**冲刺型**（每周 >=6h）
 - 目标：做出一个**完整、可运行、可展示的 Agent 作品**（重在把八课知识真正合体）
 - 感兴趣主题：**知识库问答（RAG）/ 多 Agent 协作 / 代码与运维自动化**
-- 最终作品方向：**CodeOps Agent**（读代码库 + 查知识库 + 多 Agent 分工 + 自动执行）
+- 最终作品方向：**Bottle Code**（读代码库 + 查知识库 + 多 Agent 分工 + 自动执行）
 
 ---
 
@@ -88,9 +88,9 @@
 | 第5课 | 规划 + ReAct | 计划字段 + ReAct 规则 + 思考可见 + 写入后自验证 |
 | 第6课 | 多 Agent + MCP | 规划者/执行者/评审者分工 + 接入/编写自定义 MCP |
 | 第7课 | 可靠性 + 评测 | 权限最小化、沙箱、审计日志、轨迹观测、任务评测集 |
-| 第8课 | 整合 + 打磨 | 合成 CodeOps Agent：合成层、演示、README、作品收尾 |
+| 第8课 | 整合 + 打磨 | 合成 Bottle Code：合成层、演示、README、作品收尾 |
 | 第9课 | 生产级 RAG | embedding 向量化 + 向量库(Chroma) + 混合检索(BM25+向量 RRF) + 检索评估(hit@k) |
-| 第10课 | CodeOps 网页版 | 流式输出 + FastAPI 后端 + Vue 前端，把 CodeOps Agent 变成可交互网页 |
+| 第10课 | Bottle Code 网页版 | 流式输出 + FastAPI 后端 + Vue 前端，把 Bottle Code 变成可交互网页 |
 | 第11课 | 代码 Agent 闭环 | 写代码 → 跑测试 → 改，让 Agent 自主完成编码任务闭环 |
 
 ---
@@ -98,7 +98,7 @@
 ## 学习进度
 
 - 当前课程：**第11课（代码 Agent 闭环）已完结**（11A~11D + 练习11A）—— 8 课主线 + 第9~11课进阶（三合一）全部完成；第10课（网页版）已完结（10A~10G）
-  - 进阶路线（已确认，三合一，即第9~11课）：第9课 生产级 RAG（embedding + 向量库 + 混合检索 + 检索评估）→ 第10课 CodeOps 网页版（流式 + FastAPI + Vue）→ 第11课 代码 Agent 闭环（写代码→跑测试→改）
+  - 进阶路线（已确认，三合一，即第9~11课）：第9课 生产级 RAG（embedding + 向量库 + 混合检索 + 检索评估）→ 第10课 Bottle Code 网页版（流式 + FastAPI + Vue）→ 第11课 代码 Agent 闭环（写代码→跑测试→改）
   - **10A 流式输出** ✅：`llm.py` 加 `chat_stream()`（OpenAI/Anthropic/Mock 三后端：yield 文本增量 + return 完整消息，工具调用轮次不 yield 文本）；`agent.py` 的 `run()` 加 `stream=True`（生成器逐段 yield 增量，`StopIteration.value` 拿最终答复，非流式行为不变）；`examples/stream_demo.py`（mock 打字机效果；真实 API 验证：纯文本流式 + final_answer 结构化收尾都正常）
   - **练习10A 流式事件协议** ✅：`run(stream=True)` 从 yield 裸文本升级为 yield 统一 dict 事件——`{"type":"delta","text":...}` 文本增量 / `{"type":"tool","name","args"}` 工具调用开始 / `{"type":"result","name","text"}` 工具结果，生成器 return 值 = 最终答复；`_run_tool_calls` 返回结果列表 + `stream` 参数（流式下抑制 verbose 重复打印，事件承载展示）；`stream_demo.py` 按事件类型渲染（工具进度在文本前出现）；验收：mock 工具事件先于文本 ✅、纯文本回答无工具事件 ✅、不改 llm.py ✅、非流式回归（mock_demo/eval_harness 1/4）✅、真实 API 验证 calculator 事件 + final_answer 结构化收尾 ✅
   - **10B FastAPI 后端（SSE 流式接口）** ✅：`web/server.py`（`POST /api/chat` 把 `run(stream=True)` 的事件逐个转成 SSE `data: {json}\n\n`，补发 `done`（最终答复，从 StopIteration.value 拿）/`error` 事件；`history` 字段支持多轮上下文，只收 user/assistant 文本；CORS 放开跨域；`GET /test.html` 服务浏览器测试页）；`web/test.html`（fetch + ReadableStream 消费 SSE——EventSource 不支持 POST，这是 10C Vue 前端要用的消费方式）；requirements.txt 加 fastapi/uvicorn；验收：curl mock/真实 API 事件流 tool→result→delta→done 顺序正确、history 多轮生效、浏览器全链路渲染成功（截图 web-test.png）
@@ -130,17 +130,17 @@
     - **7A 权限最小化** ✅：`mini_agent/agent.py` 的 `_run_tool_calls` 加执行层白名单检查——越权调用不执行，返回 `[SECURITY] 越权调用已拦截 + 允许列表` 并回填 history（同一 tool_call_id）；`examples/lesson7a_hole.py`（剧本 LLM 报白名单外 write_file）验证"越权成功"→"越权被拒"，None/白名单内/默认/越权 四项边界全过；复盘确认三层纵深（提示层软约束 + 执行层硬裁决 + 工具自带防御），`final_answer` 是无条件逃生门（零副作用+防死循环）
     - **7B 审计与轨迹** ✅：`mini_agent/audit.py`（AuditLogger append-only JSONL + format_trace 轨迹渲染）+ `agent.py` 加 `_record_trace` 单一漏斗（内存 trace + 可选落盘）、`_run_tool_calls` 计时/结果截断/越权事件记录、`run()` 记录 final_answer/纯文本/timeout；`logs/` 已 gitignore；验收：trace 与 `logs/agent.jsonl` 对应、越权 [SECURITY] 事件进审计、audit=None/enabled=False 不写盘、结果截断到 max_trace_chars=300；复盘确认"审计=证据(append-only/结构化/完整含失败) vs 日志=调试(可丢可改)"、"截断结果+保留 args 可重放"
     - **7C 评测集** ✅：`examples/eval_harness.py`（4 个任务：calc / read_readme / write_verify / no_leak，数据驱动 TASKS + 5 维判定 expect/must_use/file/no_secret/no_abuse + 退出码 0/1 可进 CI）；mock 1/4（正确暴露 mock 能力边界）、真实 API 3/4；no_leak 失败复盘：模型想用 read_file 验证写入被 7A 拦截（最小权限集 {write_file, final_answer}）→ 权限最小化 vs 验证习惯的设计张力；修复两处 Pylance 报错（agent.py `step` 未绑定真 bug：max_steps=0 时 NameError，循环前 `step=0` 修复；eval_harness/lesson7a_hole 的 `reconfigure` 类型误报，`# type: ignore[attr-defined]` 消除）
-  - 第8课：整合 + 打磨（CodeOps Agent 合成层 / 演示 / README / 作品收尾）
+  - 第8课：整合 + 打磨（Bottle Code 合成层 / 演示 / README / 作品收尾）
     - **8A 合成层** ✅：`mini_agent/codeops.py`（CodeOpsAgent = Orchestrator + MCP repo-stats + 审计，~50 行纯接线）；`roles.py` 加向后兼容注入点（RoleAgent/Orchestrator 透传 `audit`、Orchestrator 支持 `extra_executor_tools`）；真实 API 演示通过：mcp_count_loc 统计 10 文件 1201 行 + kb_search 查部署步骤 + 写出 results/deploy_steps.md（内容准确非编造）+ 评审通过 + 42 条审计事件落盘；mock 回归 + multi_agent_demo 回归通过
     - **8B 演示** ✅：`examples/codeops_demo.py`（一个任务同时考验 MCP + RAG + 写文件 + 多Agent + 审计）
-    - **8C 打磨** ✅：README 更新（目录结构 + CodeOps 章节 + 进阶能力表）
+    - **8C 打磨** ✅：README 更新（目录结构 + Bottle Code 章节 + 进阶能力表）
   - 第9课：生产级 RAG（embedding + 向量库 + 混合检索 + 检索评估）
     - **9A embedding + 向量库** ✅：`mini_agent/knowledge_embed.py`（fastembed `BAAI/bge-small-zh-v1.5` + Chroma PersistentClient，接口与 knowledge.py 一致）；`tools.py` kb_search 优先 embedding 版、缺依赖回退词频版
     - **9B 混合检索** ✅：手写 BM25 + 向量 RRF 排名融合（`use_hybrid=False` 可退化为纯向量）
     - **9C 检索评估** ✅：`examples/rag_eval.py`（8 查询 × hit@3，对比三方案）；知识库补全（project.md 加部署步骤、lesson_notes.md 补第4~8课笔记、新增 architecture.md / troubleshooting.md）
     - **9D 查** ✅：混合版 100% > 词频版 88% = embedding 版 88%；评测逮住两个坏评测项（project.md 无部署内容、lesson_notes.md 无第7课内容）——评测逼你验证对数据的假设；语义改写查询"怎么把服务跑起来"是 embedding 的强项（词频版唯一挂掉的一条）
     - 复盘：待做
-  - 第10课：CodeOps 网页版（流式 + FastAPI + Vue，10A~10G 全部完结）
+  - 第10课：Bottle Code 网页版（流式 + FastAPI + Vue，10A~10G 全部完结）
   - 第11课：代码 Agent 闭环（run_python 执行工具 + 闭环演示 + 编码闭环评测器 + 步数/锚定 + 空响应级联修复）
 - 环境：Python 3.13 虚拟环境 `.venv`；运行激活 venv 或用 `.venv/Scripts/python.exe`；真实 key 在本地 `.env`（已 gitignore）
 - 待补/备注（整理阶段已处理）：

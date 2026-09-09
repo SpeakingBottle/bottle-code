@@ -1,6 +1,6 @@
 # 项目速览
 
-- 名称：Mini Agent，一个用来学 AI Agent 的脚手架。
+- 名称：Bottle Code，一个用来学 AI Agent 的脚手架。
 - 语言：Python 3.13。
 - 许可：MIT。
 - 模型接入：OpenAI 兼容 API，默认配置 DeepSeek（https://api.deepseek.com/v1）。
@@ -16,4 +16,4 @@
 3. 离线验证：`python -m mini_agent.main --provider mock`，不需要 key 就能看到 Agent 循环。
 4. 接真实模型：`python -m mini_agent.main --provider openai --model gpt-4o-mini`。
 5. 建知识库索引：`python examples/build_kb.py`（词频版）或 `python examples/rag_eval.py`（embedding 版）。
-6. 跑 CodeOps 演示：`python examples/codeops_demo.py --provider anthropic`。
+6. 跑 Bottle Code 演示：`python examples/codeops_demo.py --provider anthropic`。

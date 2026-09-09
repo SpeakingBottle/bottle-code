@@ -4,7 +4,7 @@ cd /d "%~dp0"
 setlocal
 
 REM ============================================================
-REM  CodeOps Agent 网页版 · 一键启动脚本（⑤）
+REM  Bottle Code 网页版 · 一键启动脚本（⑤）
 REM  用法：
 REM     start.bat                -> 默认接真实 API（anthropic，需 .env 配好 key）
 REM     start.bat mock           -> 离线可跑，无需 key
@@ -41,10 +41,10 @@ if not exist "web\node_modules" (
 
 REM ---- 各开一个窗口拉起后端和前端 ----
 echo [start] 后端：%PROVIDER% 模式，http://127.0.0.1:8000
-start "codeops-backend" cmd /k ".venv\Scripts\python.exe web\server.py --provider %PROVIDER% --port 8000"
+start "bottle-code-backend" cmd /k ".venv\Scripts\python.exe web\server.py --provider %PROVIDER% --port 8000"
 
 echo [start] 前端：http://localhost:5173
-start "codeops-web" cmd /k "cd web && npm run dev"
+start "bottle-code-web" cmd /k "cd web && npm run dev"
 
 echo.
 echo [start] 已在两个窗口分别启动。浏览器打开 http://localhost:5173 即可对话；

@@ -75,7 +75,7 @@ class Orchestrator:
         #   规划者 —— 只用"看"的工具（读文件/列目录/检索知识库），它不该改文件
         #   执行者 —— 能用"改/跑"的工具（计算/读写文件/跑白名单命令/检索）
         #   评审者 —— 不给任何工具，纯靠传入的消息做审查（最"干净"的角色）
-        # 注入点：extra_executor_tools 让外部（如第8课 CodeOps）给执行者追加 MCP 工具；
+        # 注入点：extra_executor_tools 让外部（如第8课 Bottle Code）给执行者追加 MCP 工具；
         #         audit 让每个角色都挂上审计（第7课产物）。不传 = 行为与原来完全一致。
         executor_tools = {"calculator", "list_dir", "read_file", "write_file", "run_shell", "kb_search"}
         if extra_executor_tools:

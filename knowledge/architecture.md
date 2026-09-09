@@ -7,7 +7,7 @@
 - `llm.py`：模型后端抽象，统一 OpenAI 兼容与 Anthropic Messages API 两种格式。
 - `roles.py`：多 Agent 分工，规划者/执行者/评审者三个角色协作，用 JSON 消息传递结果。
 - `mcp_client.py`：MCP 客户端适配器，把外部 MCP 工具翻译成本项目 Agent 认识的 Tool。
-- `codeops.py`：CodeOps Agent 合成层，把 Orchestrator + MCP + 审计接线成一个入口。
+- `codeops.py`：Bottle Code 合成层，把 Orchestrator + MCP + 审计接线成一个入口。
 
 ## MCP 接入方式
 

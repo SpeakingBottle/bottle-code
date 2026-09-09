@@ -1,4 +1,4 @@
-# Mini Agent 入门项目：从 0 写一个会调用工具的智能体
+# Bottle Code：从 0 写一个会调用工具的智能体
 
 这个项目是一个**极简但能跑**的 AI Agent 脚手架。它故意不引入复杂框架（LangChain / CrewAI / AutoGen），
 而是用手写的方式把 Agent 的**核心循环**讲清楚——只有理解了这一层，你去看那些框架才会恍然大悟。
@@ -43,7 +43,7 @@ agent-learn/
 │   ├── roles.py      # 多 Agent 分工（规划者/执行者/评审者 + 编排器）
 │   ├── mcp_client.py # MCP 客户端适配器（把外部 MCP 工具挂进 Agent）
 │   ├── audit.py      # 审计日志（append-only JSONL + 轨迹渲染）
-│   ├── codeops.py    # ★ CodeOps Agent 合成层（Orchestrator + MCP + 审计）
+│   ├── codeops.py    # ★ Bottle Code 合成层（Orchestrator + MCP + 审计）
 │   └── main.py       # 命令行入口
 ├── knowledge/        # 知识库文档（用 build_kb.py 建索引）
 ├── examples/
@@ -55,7 +55,7 @@ agent-learn/
 │   ├── eval_harness.py     # 评测集：给 Agent 打分（4 任务 × 5 维度）
 │   ├── lesson7a_hole.py    # 7A 漏洞演示：越权调用被拦截
 │   ├── rag_eval.py         # 第9课 检索评估（hit@k 对比三方案）
-│   └── codeops_demo.py     # ★ CodeOps Agent 演示（MCP + RAG + 多Agent + 写文件）
+│   └── codeops_demo.py     # ★ Bottle Code 演示（MCP + RAG + 多Agent + 写文件）
 ├── memory/           # 长期记忆存放处（notebook.md）
 ├── scripts/          # 辅助脚本（如密钥检查）
 ├── .githooks/        # 提交前钩子
@@ -170,9 +170,9 @@ Agent（Host/Client）  ⇄  MCP Server（暴露工具/资源/提示）
 python examples/mcp_demo.py --provider openai-compatible
 ```
 
-> 价值：以后给 CodeOps Agent 加能力（git / 数据库 / 文件系统）只需**挂一个 MCP server**，而不是改 Agent 代码。
+> 价值：以后给 Bottle Code 加能力（git / 数据库 / 文件系统）只需**挂一个 MCP server**，而不是改 Agent 代码。
 
-### 7. CodeOps Agent（`codeops.py`）—— 前 6 节的"合体"
+### 7. Bottle Code（`codeops.py`）—— 前 6 节的"合体"
 
 把前面所有零件**接线**成一个完整可运行的作品：读代码库 + 查知识库 + 多 Agent 分工 + 自动执行。
 
@@ -217,14 +217,14 @@ python examples/mcp_demo.py --provider openai-compatible
 | 可观测性 | `audit.py`（trace + append-only JSONL） | 跑任意 demo 后看 `logs/agent.jsonl` |
 | 评测 | `eval_harness.py`（4 任务 × 5 维度，退出码可进 CI） | `eval_harness.py --provider mock` |
 | 安全与沙箱 | 执行层白名单 + 路径沙箱 + 命令白名单 | `lesson7a_hole.py` |
-| 整合 | `codeops.py`（CodeOps Agent 合成层） | `codeops_demo.py` |
+| 整合 | `codeops.py`（Bottle Code 合成层） | `codeops_demo.py` |
 
 ## 继续探索的方向（第9~11课路线）
 
 - **第9课 · 生产级 RAG** ✅ 已完成：embedding（fastembed）+ 向量库（Chroma）+ 混合检索（BM25+向量 RRF）+ 检索评估（`knowledge_embed.py` + `rag_eval.py`）。
-- **第10课 · CodeOps 网页版**：流式输出 + FastAPI 后端 + Vue 前端，把 CodeOps Agent 变成可交互网页。
+- **第10课 · Bottle Code 网页版**：流式输出 + FastAPI 后端 + Vue 前端，把 Bottle Code 变成可交互网页。
 - **第11课 · 代码 Agent 闭环**：写代码 → 跑测试 → 改，让 Agent 自主完成编码任务闭环。
-- **更多 MCP server**：挂上数据库、浏览器、CI 等外部能力，CodeOps Agent 就能真正”运维”。
+- **更多 MCP server**：挂上数据库、浏览器、CI 等外部能力，Bottle Code 就能真正”运维”。
 
 ## 安全提示（重要）
 

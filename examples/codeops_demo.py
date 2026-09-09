@@ -1,4 +1,4 @@
-"""第8课 · CodeOps Agent 演示 —— 一个任务同时用上：MCP + RAG + 多Agent + 写文件
+"""第8课 · Bottle Code 演示 —— 一个任务同时用上：MCP + RAG + 多Agent + 写文件
 
 默认任务会同时考验四条能力线：
   - mcp_count_loc   统计代码量（第6课 MCP 外部能力）
@@ -53,7 +53,7 @@ def build_llm(provider: str, model: str | None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="CodeOps Agent 演示")
+    parser = argparse.ArgumentParser(description="Bottle Code 演示")
     parser.add_argument("--provider", choices=["mock", "openai", "openai-compatible", "anthropic"], default="mock")
     parser.add_argument("--model", default=None)
     parser.add_argument("--task", default=DEFAULT_TASK)

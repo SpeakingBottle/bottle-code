@@ -23,5 +23,5 @@ MCP 协议接入外部工具（repo-stats server：count_loc / list_files / git_
 - 7C 评测集：4 个任务 × 5 维判定（expect / must_use / file / no_secret / no_abuse），退出码可进 CI。
 
 ## 第8课：整合 + 打磨
-CodeOps Agent 合成层（codeops.py）：Orchestrator + MCP repo-stats + 审计接线成一个入口；
+Bottle Code 合成层（codeops.py）：Orchestrator + MCP repo-stats + 审计接线成一个入口；
 演示 codeops_demo.py 一个任务同时考验 MCP + RAG + 写文件 + 多 Agent + 审计。

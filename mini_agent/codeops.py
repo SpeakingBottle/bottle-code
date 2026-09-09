@@ -1,4 +1,4 @@
-"""第8课 · 合成层 —— CodeOps Agent
+"""第8课 · 合成层 —— Bottle Code
 
 把前 7 课的东西"接线"成一个完整可运行的作品：
   读代码库（第2课工具） + 查知识库（第4课RAG） + 多Agent分工（第6课Orchestrator）
@@ -22,7 +22,7 @@ from .roles import Orchestrator
 
 
 class CodeOpsAgent:
-    """CodeOps Agent：Orchestrator + MCP repo-stats + 审计，一个干净的 run() 入口。
+    """Bottle Code：Orchestrator + MCP repo-stats + 审计，一个干净的 run() 入口。
 
     用法：
         agent = CodeOpsAgent(llm, mcp_server=["examples/mcp_server.py"], audit=AuditLogger())

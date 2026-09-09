@@ -180,7 +180,7 @@ async function scrollToBottom() {
       <div class="title">
         <!-- 终端提示符样式的标题：`❯` 呼应命令行，而不是一个普通 h1 -->
         <span class="prompt">❯</span>
-        <h1>CodeOps Agent</h1>
+        <h1>Bottle Code</h1>
       </div>
       <div class="header-right">
         <el-tooltip :content="sessionId" placement="bottom">

@@ -54,7 +54,7 @@ TASKS = [
     {
         "id": "read_readme",
         "prompt": "请读取 README.md，告诉我这个项目的名字叫什么（用 final_answer 的 summary）。",
-        "expect": ["Mini Agent"],
+        "expect": ["Bottle Code"],
         "allowed_tools": {"list_dir", "read_file", "final_answer"},
         "must_use": ["read_file"],
         "max_steps": 8,
