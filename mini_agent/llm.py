@@ -175,12 +175,24 @@ def _from_anthropic_response(resp):
             })
         elif block.type == "thinking":
             thinking_parts.append(getattr(block, "thinking", "") or "")
-    return {
+    data = {
         "role": "assistant",
         "content": "".join(content_parts) or None,
         "tool_calls": tool_calls or None,
         "thinking": "".join(thinking_parts) or None,
     }
+    # 诊断（11C 排查空响应用，之后也留着）：终止原因 + token 用量，空响应时能区分
+    # "输出预算被思考吃光(max_tokens 截断)" vs "模型真的没输出(end_turn)"。
+    sr = getattr(resp, "stop_reason", None)
+    if sr:
+        data["stop_reason"] = sr
+    usage = getattr(resp, "usage", None)
+    if usage is not None:
+        data["usage"] = {
+            "input_tokens": getattr(usage, "input_tokens", None),
+            "output_tokens": getattr(usage, "output_tokens", None),
+        }
+    return data
 
 
 class AnthropicLLM(LLM):
@@ -192,9 +204,10 @@ class AnthropicLLM(LLM):
     这样 agent.py 完全不用感知后端差异。
     """
 
-    def __init__(self, model=None, base_url=None, api_key=None, max_tokens=4096):
-        # max_tokens 默认 4096（此前 2048）：编码任务（第11课）里模型要先输出长思考块
-        # 再写代码/决定工具调用，2048 会被思考吃光，正文或 tool_calls 无处安放 → 空响应
+    def __init__(self, model=None, base_url=None, api_key=None, max_tokens=8192):
+        # max_tokens 默认 8192（此前 2048→4096）：编码任务（第11课）里模型要先输出长思考块
+        # 再写代码/决定工具调用，预算不足时正文或 tool_calls 无处安放 → 空响应。
+        # 4096 在长上下文分析任务里仍有被思考吃光的风险，8192 作为保险余量。
         try:
             from anthropic import Anthropic
         except ImportError as exc:

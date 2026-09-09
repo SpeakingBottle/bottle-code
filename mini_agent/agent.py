@@ -6,6 +6,10 @@ from . import tools
 from .llm import LLM
 from .audit import AuditLogger
 
+# 连续空响应上限：模型连返 N 次"无文本无工具"就中止任务，而不是静默重试直到 max_steps 耗尽
+# （同上下文静默重试对确定性模型等于"原样复现"，上一轮空下一轮还空，会空转烧光步数）
+MAX_EMPTY_RETRIES = 3
+
 DEFAULT_SYSTEM_PROMPT = """你是一个小型自主智能体（Agent），你可以使用多个工具完成任务。
 
 规则：
@@ -87,6 +91,7 @@ class Agent:
         self.verbose = True
         self._warned_trim = False
         self._anchor = None   # 本轮任务的用户问题：滑动窗口把它裁掉时重新钉回窗口最前（目标锚定）
+        self._empty_streak = 0   # 连续空响应计数：达到 MAX_EMPTY_RETRIES 中止，防止空转烧步数
 
     def _record_trace(self, event: dict):
         """单一漏斗：所有事件先记进内存轨迹；若挂了审计器，再落盘 JSONL。
@@ -218,6 +223,7 @@ class Agent:
                 })
 
             if response.get("tool_calls"):
+                self._empty_streak = 0   # 有实际输出（工具调用），重置连续空响应计数
                 # 判断是否是"终止工具"
                 for call in response["tool_calls"]:
                     if call["function"]["name"] == "final_answer":
@@ -246,16 +252,40 @@ class Agent:
                         yield {"type": "result", "name": call["function"]["name"], "text": result}
                 continue
 
-            # 空响应兜底：既无文字也无工具调用（如思考块吃光输出预算）——绝不能把空串
-            # 当"最终答复"交付，给模型重试一轮的机会（失败反馈哲学同样适用于调用本身）。
+            # 空响应兜底：既无文字也无工具调用。两种情况：①思考块吃光输出预算（编码任务实测）
+            # ②长会话后期模型偶发输出退化（服务端行为，无法完全控制）。绝不能把空串当"最终答复"
+            # 交付，但要注意：同上下文静默重试对确定性模型等于"原样复现"（上一轮空下一轮还空），
+            # 会空转烧光步数。所以空响应要 ①注入失败反馈改变上下文（打破复现）②限定连续空响应次数。
             if not response.get("content") and not response.get("tool_calls"):
+                self._empty_streak += 1
+                # 诊断信息：stop_reason 判断是 max_tokens 截断还是模型真没输出；usage 看输入规模
+                diag = {
+                    "stop_reason": response.get("stop_reason"),
+                    "thinking_chars": len(response.get("thinking") or ""),
+                    "usage": response.get("usage"),
+                }
+                if self._empty_streak >= MAX_EMPTY_RETRIES:
+                    if verbose:
+                        print(f"  [warn] 模型连续 {self._empty_streak} 次返回空响应（诊断: {diag}），任务中止")
+                    self._record_trace({
+                        "step": step + 1, "role": "empty", "name": "(model)",
+                        "args": diag,
+                        "result": f"连续 {self._empty_streak} 次空响应，达到上限，任务中止（不再空转消耗步数）",
+                    })
+                    return "（模型连续返回空响应，任务异常中止。可重试，或检查模型/上下文后再试）"
+                # 失败反馈哲学：把"上一轮没输出"写回历史，改变模型下一轮的上下文，
+                # 打破"同输入 → 同空响应"的确定性复现，给模型一个明确出路。
+                hint = ("（上一轮没有任何输出。请继续：任务已完成就调用 final_answer；否则输出一行"
+                        "简短文字说明进展，或调用一个工具推进。直接行动，不要只输出思考过程。）")
+                self.history.append({"role": "user", "content": hint})
                 if verbose:
-                    print("  [warn] 模型返回空响应（可能思考过长吃光输出预算），重试一轮")
+                    print(f"  [warn] 模型返回空响应（诊断: {diag}），已注入反馈重试（连续第 {self._empty_streak} 次）")
                 self._record_trace({
                     "step": step + 1, "role": "empty", "name": "(model)",
-                    "args": {}, "result": "模型返回空响应（无文本无工具调用），本轮重试",
+                    "args": diag, "result": "模型返回空响应，已注入反馈（提示直接行动）后重试",
                 })
                 continue
+            self._empty_streak = 0   # 这轮有实际输出，重置连续空响应计数
 
             # 模型给出最终答复，结束循环
             content = response.get("content") or ""
