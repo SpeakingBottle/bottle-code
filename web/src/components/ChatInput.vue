@@ -1,6 +1,7 @@
 <script setup>
-// 输入框：回车或点按钮发送；生成中禁用
+// 输入框：回车或点按钮发送；生成中禁用。组件用 Element Plus（el-input + el-button）。
 import { ref } from 'vue'
+import { Promotion } from '@element-plus/icons-vue'
 
 defineProps({
   disabled: { type: Boolean, default: false },
@@ -18,13 +19,20 @@ function submit() {
 
 <template>
   <div class="input-bar">
-    <input
+    <el-input
       v-model="text"
       placeholder="输入任务，例如：帮我计算 2+3 的结果"
       :disabled="disabled"
+      size="large"
       @keyup.enter="submit"
-    >
-    <button :disabled="disabled" @click="submit">发送</button>
+    />
+    <el-button
+      type="primary"
+      size="large"
+      :icon="Promotion"
+      :disabled="disabled"
+      @click="submit"
+    >发送</el-button>
   </div>
 </template>
 
@@ -36,31 +44,15 @@ function submit() {
   background: var(--surface);
   border-top: 1px solid var(--border);
 }
-.input-bar input {
-  flex: 1;
-  padding: .6rem .9rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
+/* el-input 的边框是 box-shadow 画的（EP 惯例），用 :deep 覆盖成终端风 */
+.input-bar :deep(.el-input__wrapper) {
   background: var(--bg);
-  color: var(--text);
-  font-size: .95rem;
+  box-shadow: 0 0 0 1px var(--border) inset;
 }
-.input-bar input::placeholder { color: var(--text-dim); }
-.input-bar input:focus {
-  outline: none;
-  border-color: var(--user);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--user) 18%, transparent);
+.input-bar :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--user) inset,
+              0 0 0 3px color-mix(in srgb, var(--user) 15%, transparent);
 }
-.input-bar button {
-  padding: .6rem 1.3rem;
-  border: 1px solid var(--user);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--user);
-  font-size: .95rem;
-  cursor: pointer;
-}
-.input-bar button:not(:disabled):hover { background: var(--user); color: var(--bg); }
-.input-bar button:disabled,
-.input-bar input:disabled { opacity: .45; cursor: not-allowed; }
+.input-bar :deep(.el-input__inner) { color: var(--text); }
+.input-bar :deep(.el-input__inner::placeholder) { color: var(--text-dim); }
 </style>

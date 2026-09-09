@@ -7,7 +7,8 @@
      --border  分隔线
      --text    主文本 / 次文本
      --user    用户消息（命令提示符青色）
-     --tool / --result / --error  工具事件的语义色 */
+     --tool / --result / --error  工具事件的语义色
+     --content-width  内容列宽度（头部全宽，消息/输入框居中限宽） */
 :root {
   --bg: #0f1720;
   --surface: #16202b;
@@ -19,6 +20,7 @@
   --tool: #f59e0b;
   --result: #4ade80;
   --error: #f87171;
+  --content-width: 1000px;
 }
 
 * { box-sizing: border-box; }
@@ -30,3 +32,34 @@ body {
 }
 /* 工具事件 / 代码用等宽字体：内容本身就是代码/工具调用，等宽是内容驱动的选择 */
 .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+
+/* ---- Element Plus 深色主题覆盖：把 EP 默认色换成终端风 ----
+   EP 的 dark css-vars 在 html.dark 下生效，这里同选择器覆盖（后导入，级联赢）。
+   只改颜色/圆角，组件行为不变。 */
+html.dark {
+  --el-color-primary: var(--user);
+  --el-color-primary-light-3: color-mix(in srgb, var(--user) 60%, transparent);
+  --el-color-primary-light-5: color-mix(in srgb, var(--user) 40%, transparent);
+  --el-color-primary-light-7: color-mix(in srgb, var(--user) 25%, transparent);
+  --el-color-primary-light-8: color-mix(in srgb, var(--user) 18%, transparent);
+  --el-color-primary-light-9: color-mix(in srgb, var(--user) 10%, transparent);
+  --el-color-primary-dark-2: #0ea5c9;
+  --el-bg-color: var(--bg);
+  --el-bg-color-page: var(--bg);
+  --el-bg-color-overlay: var(--surface-2);
+  --el-fill-color-blank: var(--surface);
+  --el-fill-color: var(--surface-2);
+  --el-fill-color-light: var(--surface-2);
+  --el-fill-color-lighter: var(--surface-2);
+  --el-fill-color-dark: var(--surface-2);
+  --el-border-color: var(--border);
+  --el-border-color-light: var(--border);
+  --el-border-color-lighter: var(--border);
+  --el-border-color-extra-light: var(--border);
+  --el-text-color-primary: var(--text);
+  --el-text-color-regular: var(--text);
+  --el-text-color-secondary: var(--text-dim);
+  --el-text-color-placeholder: var(--text-dim);
+  --el-border-radius-base: 4px;
+  --el-box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+}

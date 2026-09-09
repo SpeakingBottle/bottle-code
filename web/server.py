@@ -68,6 +68,31 @@ def build_agent(provider: str) -> Agent:
     raise SystemExit(f"不支持的 provider: {provider}")
 
 
+def clean_final_answer(raw: str) -> str:
+    """把 final_answer 的结构化 JSON 变成人看的干净答复。
+
+    Agent 的最终答复是 final_answer 参数的完整 JSON dump（summary/plan/steps/
+    used_tools/verdict/feedback/result），直接展示会"输出一堆 summary 等"。
+    这里只提取 summary（模型通常把答案写在这里，如 "100/4 = 25"）；
+    若 result 存在且没被 summary 包含（如 summary="计算完成"、result="5"），
+    再补一行 result。解析失败（纯文本答复）原样返回。
+
+    注意：只改"展示层"，不动 Agent 核心——多 Agent 的 Orchestrator 还要
+    解析完整 JSON（verdict/feedback/steps）做评审，改了会破坏它。
+    """
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+    if not isinstance(data, dict) or not data.get("summary"):
+        return raw
+    summary = data["summary"]
+    result = data.get("result")
+    if result and str(result) not in summary:
+        summary += "\n\n" + str(result)
+    return summary
+
+
 class ChatRequest(BaseModel):
     prompt: str
     # 会话记忆：同一 session_id 复用同一个 Agent 实例（history 跨请求保留），
@@ -145,8 +170,10 @@ def make_app(provider: str = "anthropic") -> FastAPI:
                     event = next(gen)
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             except StopIteration as e:
-                # 生成器 return 值 = 最终答复，补发一个 done 事件（前端不用抓 StopIteration）
-                final = e.value
+                # 生成器 return 值 = 最终答复，补发一个 done 事件（前端不用抓 StopIteration）。
+                # 先 clean：final_answer 的 JSON dump 只留 summary（+ 必要的 result），
+                # 前端和 chat_logs 拿到的都是人看的干净答复。
+                final = clean_final_answer(e.value)
                 yield f"data: {json.dumps({'type': 'done', 'text': final}, ensure_ascii=False)}\n\n"
                 # 完成时把 user 提问 + 最终答复记入展示记录（供刷新恢复）；
                 # 工具事件不记——重新对话时会重新产生。无 session_id 则不记（无状态模式）。
