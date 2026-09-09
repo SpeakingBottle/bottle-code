@@ -3,6 +3,20 @@
 这个项目是一个**极简但能跑**的 AI Agent 脚手架。它故意不引入复杂框架（LangChain / CrewAI / AutoGen），
 而是用手写的方式把 Agent 的**核心循环**讲清楚——只有理解了这一层，你去看那些框架才会恍然大悟。
 
+从这块地基往外，它一路长成了**一个能跑真任务、有交互界面的成品**——写代码、查知识库、多 Agent 分工、
+接 MCP、跑编码闭环、还有网页版。下面是它的样子。
+
+## 🚀 作品展示（Bottle Code 网页版）
+
+一个从零手写的 Agent 主循环，被逐步打磨成了**可交互的网页版作品**：流式输出 · 轨迹可观测 · 会话持久化。
+
+| 聊天页 | 会话轨迹 | 会话列表 |
+|---|---|---|
+| ![聊天页](docs/screenshots/homepage.png) | ![轨迹抽屉](docs/screenshots/trace-panel.png) | ![会话列表](docs/screenshots/sessions-panel.png) |
+| 深色终端风 · 工具事件时间线 · 流式打字机 | 每步「提示词·上下文 / 工具调用 / 答复」可展开 | 多会话切换 / 改名 / 删除，刷新续聊 |
+
+> 上方截图用 `mock` 后端跑（无需 API key，离线即可）。接了真实 API 后，模型还会在「轨迹」里留下**思考块**与真实推理。
+
 ## 你已有的知识怎么迁移过来
 
 | 你在 Claude Code / vibe coding 里见过的 | 对应到本项目的哪一个部分 | 说明 |
@@ -36,8 +50,8 @@ agent-learn/
 ├── mini_agent/
 │   ├── __init__.py
 │   ├── agent.py      # Agent 主循环（最核心）
-│   ├── llm.py        # 模型后端抽象（真实 API / mock）
-│   ├── tools.py      # 工具注册表 + 各工具实现
+│   ├── llm.py        # 模型后端抽象（真实 API / mock + 流式）
+│   ├── tools.py      # 工具注册表 + 各工具实现（含 run_python 沙箱）
 │   ├── knowledge.py  # 最小版 RAG（切块 + 向量 + 检索）
 │   ├── knowledge_embed.py  # 第9课 生产级 RAG（embedding + Chroma + 混合检索）
 │   ├── roles.py      # 多 Agent 分工（规划者/执行者/评审者 + 编排器）
@@ -45,6 +59,10 @@ agent-learn/
 │   ├── audit.py      # 审计日志（append-only JSONL + 轨迹渲染）
 │   ├── codeops.py    # ★ Bottle Code 合成层（Orchestrator + MCP + 审计）
 │   └── main.py       # 命令行入口
+├── web/              # ★ Bottle Code 网页版（第10课）
+│   ├── server.py     #   FastAPI + SSE 后端（/api/chat）
+│   ├── src/          #   Vue 3 + Vite 前端（聊天页 / 轨迹 / 会话抽屉）
+│   └── start.bat     #   一键启动（后端 + 前端）
 ├── knowledge/        # 知识库文档（用 build_kb.py 建索引）
 ├── examples/
 │   ├── mock_demo.py        # 离线演示脚本
@@ -55,7 +73,11 @@ agent-learn/
 │   ├── eval_harness.py     # 评测集：给 Agent 打分（4 任务 × 5 维度）
 │   ├── lesson7a_hole.py    # 7A 漏洞演示：越权调用被拦截
 │   ├── rag_eval.py         # 第9课 检索评估（hit@k 对比三方案）
-│   └── codeops_demo.py     # ★ Bottle Code 演示（MCP + RAG + 多Agent + 写文件）
+│   ├── codeops_demo.py     # ★ Bottle Code 演示（MCP + RAG + 多Agent + 写文件）
+│   ├── lesson11_demo.py    # 第11课 编码闭环演示（写代码→跑测试→改）
+│   ├── lesson11_eval.py    # 练习11A 编码闭环评测器（隐藏测试验证产物）
+│   └── stream_demo.py      # 10A 流式输出演示（打字机效果）
+├── docs/             # 作品展示素材（screenshots/）
 ├── memory/           # 长期记忆存放处（notebook.md）
 ├── scripts/          # 辅助脚本（如密钥检查）
 ├── .githooks/        # 提交前钩子
@@ -91,6 +113,21 @@ python -m mini_agent.main --provider openai --model gpt-4o-mini
 `--provider openai` 走的是 OpenAI 兼容的 `/chat/completions` 接口。
 只要你手上是用这种协议的服务（DeepSeek / 通义千问 / 本地 Ollama 等），把 `.env` 里的
 `OPENAI_BASE_URL` 改成对应地址就能复用同一个代码。
+
+### 3. 启动网页版（第10课 · 交互界面）
+
+```
+cd web
+start.bat              # 默认 mock，离线可跑；也可 start.bat anthropic 用真实 API
+```
+
+它会自动检查依赖、起 FastAPI 后端（:8000）+ Vite 前端（:5173），并各自开一个窗口。
+浏览器打开前端地址，输入任务，就能看到**流式输出 + 工具事件时间线**。也可手动分步：
+
+```
+.venv/Scripts/python.exe web/server.py --provider mock --port 8000   # 后端
+cd web && npm install && npm run dev                                  # 前端（代理 /api → :8000）
+```
 
 ## 它是怎么工作的（逐文件拆解）
 
@@ -218,13 +255,21 @@ python examples/mcp_demo.py --provider openai-compatible
 | 评测 | `eval_harness.py`（4 任务 × 5 维度，退出码可进 CI） | `eval_harness.py --provider mock` |
 | 安全与沙箱 | 执行层白名单 + 路径沙箱 + 命令白名单 | `lesson7a_hole.py` |
 | 整合 | `codeops.py`（Bottle Code 合成层） | `codeops_demo.py` |
+| 网页版 | 流式输出 + FastAPI + SSE + Vue | `web/server.py` / `start.bat` |
+| 生产级 RAG | 混合检索（BM25 + 向量 RRF） | `knowledge_embed.py` / `rag_eval.py` |
+| 代码编码闭环 | `run_python` 沙箱 + 隐藏测试评测器 | `lesson11_demo.py` / `lesson11_eval.py` |
 
-## 继续探索的方向（第9~11课路线）
+## 进阶能力（第9~11课 · 已全部完成）
 
-- **第9课 · 生产级 RAG** ✅ 已完成：embedding（fastembed）+ 向量库（Chroma）+ 混合检索（BM25+向量 RRF）+ 检索评估（`knowledge_embed.py` + `rag_eval.py`）。
-- **第10课 · Bottle Code 网页版**：流式输出 + FastAPI 后端 + Vue 前端，把 Bottle Code 变成可交互网页。
-- **第11课 · 代码 Agent 闭环**：写代码 → 跑测试 → 改，让 Agent 自主完成编码任务闭环。
-- **更多 MCP server**：挂上数据库、浏览器、CI 等外部能力，Bottle Code 就能真正”运维”。
+- **第9课 · 生产级 RAG** ✅：embedding（fastembed）+ 向量库（Chroma）+ 混合检索（BM25+向量 RRF）+ 检索评估（`knowledge_embed.py` + `rag_eval.py`）。
+- **第10课 · Bottle Code 网页版** ✅：流式输出 + FastAPI 后端 + Vue 前端，把 Bottle Code 变成可交互网页（`web/`）。
+- **第11课 · 代码 Agent 闭环** ✅：`run_python` 沙箱执行 + 写代码 → 跑测试 → 改到通过 + 隐藏测试评测器（`lesson11_demo.py` / `lesson11_eval.py`）。
+
+## 接下来还能加什么（待办/灵感）
+
+- **更多 MCP server**：挂上数据库、浏览器、CI 等外部能力，Bottle Code 就能真正"运维"。
+- **生产化改造**：`sessions.json` → SQLite/Redis、Element Plus 按需引入、鉴权、HTTPS（当前为教学演示，已知在此留白）。
+- **更硬的命令级沙箱**：`run_shell` 目前对 `cat` 读任意文件 / git 仓库操作仍开放，可深化到真正的命令级白名单。
 
 ## 安全提示（重要）
 
