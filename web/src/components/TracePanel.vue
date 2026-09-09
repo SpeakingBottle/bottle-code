@@ -36,6 +36,8 @@ async function load() {
 
 // 打开时拉一次；每次打开都重新拉（轨迹随对话增长）
 watch(() => props.modelValue, (open) => { if (open) load() })
+// ⑤ 会话切换：抽屉开着时换了 sid，也要重新拉（否则显示的是上一个会话的轨迹）
+watch(() => props.sid, () => { if (props.modelValue) load() })
 
 // —— 图标 / 标签：与聊天时间线同一套 EP 图标语言（③）。
 // 新增两类（② 轨迹补全）：thinking=模型思考（Cpu，模型推理）/ prompt=

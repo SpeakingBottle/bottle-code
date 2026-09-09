@@ -32,6 +32,9 @@ credentials
 memory/notebook.md
 # 7B 审计日志：append-only JSONL，不进版本库
 /logs/
+# ⑤ 会话持久化：用户对话数据（含模型上下文），不进版本库
+web/sessions.json
+web/sessions.json.tmp
 chroma/
 data/
 *.db

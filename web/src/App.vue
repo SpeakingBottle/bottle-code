@@ -1,10 +1,11 @@
 <script setup>
 // 聊天页骨架：消息列表 + 输入框 + SSE 消费逻辑
 import { ref, reactive, nextTick } from 'vue'
-import { Plus, Memo } from '@element-plus/icons-vue'
+import { Plus, Memo, ChatDotRound } from '@element-plus/icons-vue'
 import ChatMessage from './components/ChatMessage.vue'
 import ChatInput from './components/ChatInput.vue'
 import TracePanel from './components/TracePanel.vue'
+import SessionPanel from './components/SessionPanel.vue'
 
 // ---- 会话记忆（10B）：session_id 存 localStorage，刷新后同一会话续上 ----
 const sessionId = ref(localStorage.getItem('codeops_session_id') || '')
@@ -16,11 +17,26 @@ if (!sessionId.value) {
 const messages = ref([])
 const sending = ref(false)
 const traceOpen = ref(false)   // ④ 会话轨迹展示抽屉的开关
+const sessionOpen = ref(false) // ⑤ 会话列表抽屉的开关
+const sessionPanel = ref(null) // ⑤ 引用子组件：对话结束后刷新列表
 
 function newSession() {
   sessionId.value = crypto.randomUUID()
   localStorage.setItem('codeops_session_id', sessionId.value)
   messages.value = []
+}
+
+// ---- ⑤ 会话切换：换 session_id → 清空消息 → 拉新会话的历史 ----
+function switchSession(sid) {
+  if (sid === sessionId.value) return
+  sessionId.value = sid
+  localStorage.setItem('codeops_session_id', sid)
+  messages.value = []
+  restoreHistory()
+}
+// 当前会话被删了 → 落到一个全新会话（否则页面还指着已删除的 sid）
+function onSessionDeleted(sid) {
+  if (sid === sessionId.value) newSession()
 }
 
 // ---- 刷新后恢复聊天记录（10C）：向后端要这个会话的文本历史 ----
@@ -97,6 +113,8 @@ async function send(prompt) {
   } finally {
     assistant.streaming = false
     sending.value = false
+    // ⑤ 对话结束：会话列表可能变了（新会话/新消息/自动命名），刷新一下
+    if (sessionOpen.value) sessionPanel.value?.load()
   }
 }
 
@@ -168,6 +186,8 @@ async function scrollToBottom() {
         <el-tooltip :content="sessionId" placement="bottom">
           <span class="status mono">#{{ sessionId.slice(0, 8) }}</span>
         </el-tooltip>
+        <!-- ⑤ 会话列表入口：回到之前的对话 / 改名 / 删除 -->
+        <el-button size="small" :icon="ChatDotRound" @click="sessionOpen = true">会话</el-button>
         <!-- ④ 会话轨迹入口：打开抽屉看本会话的完整轨迹 -->
         <el-button size="small" :icon="Memo" @click="traceOpen = true">轨迹</el-button>
         <el-button size="small" :icon="Plus" @click="newSession">新建会话</el-button>
@@ -189,6 +209,13 @@ async function scrollToBottom() {
     </div>
 
     <TracePanel v-model="traceOpen" :sid="sessionId" />
+    <SessionPanel
+      v-model="sessionOpen"
+      :current-sid="sessionId"
+      @select="switchSession"
+      @deleted="onSessionDeleted"
+      ref="sessionPanel"
+    />
   </div>
 </template>
 
