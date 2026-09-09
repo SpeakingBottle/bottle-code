@@ -21,6 +21,8 @@
   --tool: #f59e0b;
   --result: #4ade80;
   --error: #f87171;
+  /* 思考专用蓝（区别于主题蓝 --user：模型推理是过程、用户消息是角色） */
+  --think: #60a5fa;
   --content-width: 1000px;
 }
 

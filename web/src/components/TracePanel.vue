@@ -5,7 +5,7 @@
 //（含 assistant 最终答复、final_answer 结构化输出、timeout），是审计/复盘的可见入口。
 // trace 是 Agent 实例上累积的（跨多次 run 追加），所以同一会话里会越积越长。
 import { ref, watch } from 'vue'
-import { Cpu, Tools, Document, CircleCheck, Warning, Files, ChatDotRound } from '@element-plus/icons-vue'
+import { Cpu, Tools, Document, CircleCheck, Warning, Files, ChatDotRound, CaretRight, CaretBottom } from '@element-plus/icons-vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -25,7 +25,8 @@ async function load() {
     const resp = await fetch(`/api/sessions/${props.sid}/trace`)
     if (!resp.ok) throw new Error('HTTP ' + resp.status)
     const data = await resp.json()
-    trace.value = data.trace || []
+    // 每条加上 open:false —— 轨迹默认折叠（②），点了才展开，扫起来更省力
+    trace.value = (data.trace || []).map((ev) => ({ ...ev, open: false }))
   } catch (e) {
     error.value = e.message
   } finally {
@@ -88,14 +89,16 @@ function body(ev) {
       <div v-else-if="trace.length === 0" class="tp-state">本会话还没有轨迹。</div>
       <div v-else class="tp-list">
         <div v-for="(ev, i) in trace" :key="i" class="tp-item" :class="ev.role">
-          <div class="tp-head">
+          <!-- ① 整条头部可点：展开/收起（默认收起），caret 指示状态（②） -->
+          <button class="tp-head" @click="ev.open = !ev.open">
+            <el-icon class="caret"><CaretRight v-if="!ev.open" /><CaretBottom v-else /></el-icon>
             <el-icon class="tp-ic" :class="'ic-' + ev.role">
               <component :is="icon(ev.role)" />
             </el-icon>
             <span class="tp-label">{{ label(ev) }}</span>
             <span v-if="meta(ev)" class="tp-meta mono">{{ meta(ev) }}</span>
-          </div>
-          <div class="tp-body mono">{{ body(ev) }}</div>
+          </button>
+          <div v-if="ev.open" class="tp-body mono">{{ body(ev) }}</div>
         </div>
       </div>
     </div>
@@ -120,15 +123,31 @@ function body(ev) {
 .tp-item.tool { border-left-color: var(--tool); }
 .tp-item.assistant { border-left-color: var(--user); }
 .tp-item.final_answer { border-left-color: var(--result); }
-.tp-item.thinking { border-left-color: var(--text-dim); }
+.tp-item.thinking { border-left-color: var(--think); }
 .tp-item.prompt { border-left-color: var(--text-dim); }
 .tp-item.timeout { border-left-color: var(--error); }
-.tp-head { display: flex; align-items: center; gap: .45rem; }
+/* 头部做成整条可点的按钮：caret 指示折叠状态，其余排版不变 */
+.tp-head {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tp-head:hover .tp-label { color: var(--text); }
+.caret { color: var(--text-dim); font-size: .8rem; flex: none; }
 .tp-ic { font-size: .95rem; flex: none; }
 .ic-tool { color: var(--tool); }
 .ic-assistant { color: var(--user); }
 .ic-final_answer { color: var(--result); }
-.ic-thinking { color: var(--text-dim); }
+.ic-thinking { color: var(--think); }
 .ic-prompt { color: var(--text-dim); }
 .ic-timeout { color: var(--error); }
 /* 名称（标签）随图标一起着色；只有它带颜色，正文统一灰——突出最终答复（用户要求） */
@@ -136,7 +155,7 @@ function body(ev) {
 .tp-item.tool .tp-label { color: var(--tool); }
 .tp-item.assistant .tp-label { color: var(--user); }
 .tp-item.final_answer .tp-label { color: var(--result); }
-.tp-item.thinking .tp-label { color: var(--text-dim); }
+.tp-item.thinking .tp-label { color: var(--think); }
 .tp-item.prompt .tp-label { color: var(--text-dim); }
 .tp-item.timeout .tp-label { color: var(--error); }
 .tp-meta {

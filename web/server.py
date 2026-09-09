@@ -53,18 +53,24 @@ except ImportError:
     pass
 
 
+# 网页版给更宽的步数上限（④）：命令行 12 步够演示单个任务，但"分析整个项目"这类的
+# 宽任务要逐文件 read_file，12 步常常不够就 timeout。网页交互把它放宽到 24，
+# 让 Agent 能走完一个较真实的码读+归纳流程。代价是单任务更长/更多 token——教学演示可接受。
+WEB_MAX_STEPS = 24
+
+
 def build_agent(provider: str) -> Agent:
     """按 provider 构造 Agent（与 main.py 的 build_agent 同构）。"""
     if provider == "mock":
-        return Agent(MockLLM())
+        return Agent(MockLLM(), max_steps=WEB_MAX_STEPS)
     if provider == "anthropic":
         if not (os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")):
             raise SystemExit("请在 .env 中设置 ANTHROPIC_AUTH_TOKEN（或 ANTHROPIC_API_KEY）")
-        return Agent(AnthropicLLM())
+        return Agent(AnthropicLLM(), max_steps=WEB_MAX_STEPS)
     if provider in ("openai", "openai-compatible"):
         if not os.environ.get("OPENAI_API_KEY"):
             raise SystemExit("请在 .env 中设置 OPENAI_API_KEY")
-        return Agent(OpenAIChatLLM())
+        return Agent(OpenAIChatLLM(), max_steps=WEB_MAX_STEPS)
     raise SystemExit(f"不支持的 provider: {provider}")
 
 
