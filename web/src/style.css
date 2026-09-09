@@ -1,12 +1,12 @@
 /* 全局基础样式：聊天页占满视口高度。
-   深色终端风：颜色对应信息类型（青=用户 / 琥珀=tool / 绿=result / 红=error），
+   深色终端风：颜色对应信息类型（蓝=用户/主题 / 琥珀=tool / 绿=result / 红=error），
    像终端输出用颜色区分不同类型，而不是装饰性配色。
    设计 token：
      --bg      主背景（深蓝黑，比纯黑更有层次）
      --surface 表面（header / 气泡 / 输入栏）
      --border  分隔线
      --text    主文本 / 次文本
-     --user    用户消息（命令提示符青色）
+     --user    主题色（Element Plus 默认蓝 #409eff）：用户消息/主按钮/提示符
      --tool / --result / --error  工具事件的语义色
      --content-width  内容列宽度（头部全宽，消息/输入框居中限宽） */
 :root {
@@ -16,7 +16,8 @@
   --border: #243140;
   --text: #dbe2ea;
   --text-dim: #7d8a99;
-  --user: #22d3ee;
+  /* 主题色：Element Plus 默认蓝（#409eff），青色已按需求替换 */
+  --user: #409eff;
   --tool: #f59e0b;
   --result: #4ade80;
   --error: #f87171;
@@ -43,7 +44,7 @@ html.dark {
   --el-color-primary-light-7: color-mix(in srgb, var(--user) 25%, transparent);
   --el-color-primary-light-8: color-mix(in srgb, var(--user) 18%, transparent);
   --el-color-primary-light-9: color-mix(in srgb, var(--user) 10%, transparent);
-  --el-color-primary-dark-2: #0ea5c9;
+  --el-color-primary-dark-2: #337ecc;
   --el-bg-color: var(--bg);
   --el-bg-color-page: var(--bg);
   --el-bg-color-overlay: var(--surface-2);

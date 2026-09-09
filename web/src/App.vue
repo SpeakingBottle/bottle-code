@@ -1,6 +1,6 @@
 <script setup>
 // 聊天页骨架：消息列表 + 输入框 + SSE 消费逻辑
-import { ref, reactive, watch, nextTick } from 'vue'
+import { ref, reactive, nextTick } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import ChatMessage from './components/ChatMessage.vue'
 import ChatInput from './components/ChatInput.vue'
@@ -30,9 +30,9 @@ async function restoreHistory() {
     if (!resp.ok) return
     const data = await resp.json()
     messages.value = data.messages.map((m) => ({
-      role: m.role, content: m.content, pending: '', thinking: [],
-      events: [], streaming: false, showThinking: false,
+      role: m.role, content: m.content, pending: '', timeline: [], streaming: false,
     }))
+    scrollToBottom()   // 刚加载完，强制滚到底部
   } catch (e) {
     // 后端没起 / 网络差：静默失败，页面保持空对话，不影响继续使用
   }
@@ -43,15 +43,15 @@ restoreHistory()
 async function send(prompt) {
   if (sending.value) return
   sending.value = true
-  messages.value.push({ role: 'user', content: prompt })
   // 必须用 reactive()：push 进数组后，局部变量要持有"响应式代理"本身，
   // 后续 assistant.content += 才会触发重渲染。用普通对象的话，改的是原始对象，
   // 代理的 SET 陷阱不触发，流式文本会"静默丢失"（Vue 3 经典坑）。
+  messages.value.push({ role: 'user', content: prompt })
   const assistant = reactive({
-    role: 'assistant', content: '', pending: '', thinking: [],
-    events: [], streaming: true, showThinking: true,
+    role: 'assistant', content: '', pending: '', timeline: [], streaming: true,
   })
   messages.value.push(assistant)
+  scrollToBottom()
 
   try {
     const resp = await fetch('/api/chat', {
@@ -70,15 +70,20 @@ async function send(prompt) {
       buf += decoder.decode(value, { stream: true })
       const blocks = buf.split('\n\n')
       buf = blocks.pop()   // 最后一块可能不完整，留到下次
+      if (!blocks.length) continue
+      // 先记住"进入这块数据前是不是在底部"，内容追加后再决定要不要跟滚：
+      // 在底部=跟滚；用户往上翻历史=不打扰。折叠/展开思考不经过这里=不会跳底（⑤）。
+      const wasNearBottom = isNearBottom()
       for (const block of blocks) {
         const line = block.trim()
         if (!line.startsWith('data:')) continue
-        const ev = JSON.parse(line.slice(5).trim())
-        handleEvent(ev, assistant)
+        handleEvent(JSON.parse(line.slice(5).trim()), assistant)
       }
+      if (wasNearBottom) scrollToBottom()
     }
   } catch (e) {
     assistant.content += '\n[错误] ' + e.message
+    scrollToBottom()
   } finally {
     assistant.streaming = false
     sending.value = false
@@ -87,10 +92,10 @@ async function send(prompt) {
 
 // ---- 事件处理：delta 先缓冲，看到后续事件才知道它是"推理"还是"答复" ----
 // 流式协议里文本只有 delta 一种，但语义有两种：
-//   工具调用前的文本 = 推理（ReAct 的"思考"）→ 提交进 thinking 块
+//   工具调用前的文本 = 推理（ReAct 的"思考"）→ 提交进 timeline 的 reason 条目
 //   没有工具调用、直接 done 的文本 = 最终答复 → 成为 content
 // 所以 delta 先进 pending 缓冲，等下一个事件来裁决：
-//   tool 事件 → pending 是推理，提交进 thinking
+//   tool 事件 → pending 是推理，flush 成一条 reason
 //   done 事件 → pending 丢弃，答复以 done.text 为准（后端已 clean 成干净文本）
 // 这就是"协议不变、展示层自己判断"——后端不用为推理单独加事件类型。
 function handleEvent(ev, assistant) {
@@ -100,11 +105,12 @@ function handleEvent(ev, assistant) {
     flushReason(assistant)
     // final_answer 是收尾工具，它的参数就是那堆结构化 JSON，人不用看，过滤掉
     if (ev.name !== 'final_answer') {
-      assistant.events.push({ kind: 'tool', name: ev.name, args: ev.args })
+      assistant.timeline.push({ kind: 'tool', name: ev.name, args: ev.args })
     }
   } else if (ev.type === 'result') {
     if (ev.name !== 'final_answer') {
-      assistant.events.push({ kind: 'result', name: ev.name, text: ev.text })
+      // open:false = 工具结果默认折叠（②：只展示一部分，超长可展开）
+      assistant.timeline.push({ kind: 'result', name: ev.name, text: ev.text, open: false })
     }
   } else if (ev.type === 'done') {
     assistant.pending = ''
@@ -114,20 +120,29 @@ function handleEvent(ev, assistant) {
   }
 }
 
+// 每次 tool 事件前 flush 一次 → 不同时刻的思考是独立条目，
+// 在 timeline 里和工具调用按发生顺序交错，不堆在顶部（④）。
 function flushReason(assistant) {
   if (assistant.pending.trim()) {
-    assistant.thinking.push(assistant.pending)
+    assistant.timeline.push({ kind: 'reason', text: assistant.pending, open: true })
   }
   assistant.pending = ''
 }
 
-// 新内容到达时自动滚到底部（deep watch：流式追加也会触发）
+// ---- 自动滚底（⑤）：只在新数据到达时触发 ----
+// 不用 deep watch：watch 监听一切变更，折叠/展开思考也会触发滚动 → 页面跳底。
+// 改为显式调用：新消息 / 新数据块到达时才滚，且只在用户本来就在底部时跟滚。
 const listEl = ref(null)
-watch(messages, async () => {
+function isNearBottom() {
+  const el = listEl.value
+  if (!el) return true
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 80
+}
+async function scrollToBottom() {
   await nextTick()
   const el = listEl.value
   if (el) el.scrollTop = el.scrollHeight
-}, { deep: true })
+}
 </script>
 
 <template>
@@ -191,14 +206,18 @@ watch(messages, async () => {
   display: flex;
   flex-direction: column;
 }
+/* ① 消息列表滚动条贴输入框 → 隐藏滚动条（滚动功能保留），并给底部留白，
+   最后一条内容不和输入框挨着 */
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 1.2rem 1.1rem;
+  padding: 1.2rem 1.1rem 2.5rem;
   display: flex;
   flex-direction: column;
   gap: .9rem;
+  scrollbar-width: none;                      /* Firefox */
 }
+.chat-messages::-webkit-scrollbar { display: none; }  /* Chrome/Edge/Safari */
 .empty-hint { text-align: center; margin-top: 4rem; color: var(--text-dim); }
 .empty-line { font-size: .95rem; color: var(--user); margin: 0; }
 .empty-sub { font-size: .85rem; margin: .4rem 0 0; }

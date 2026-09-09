@@ -1,47 +1,59 @@
 <script setup>
-// 单条消息：user 右对齐青色；assistant 左对齐，含推理块 + 工具事件 + 答复文本。
-// 结构参考 Claude Code：推理（思考）是可折叠的暗色块，工具调用是紧凑日志行，
-// 最终答复是干净的正文。颜色复用全局 token（style.css 的 :root）。
+// 单条消息：user 右对齐气泡；assistant 全宽正文（无容器边框/背景，Claude Code 风格）。
+// assistant 内部是一个时间线（timeline）：思考/工具调用/工具结果按发生顺序交错，
+// 不同时刻的思考是独立条目，不堆在顶部（④）。
+// 工具结果默认折叠（②）：超过 SHORT_LEN 只展示开头，可展开/收起。
+// 结构参考 Claude Code：推理是暗色可折叠小块，工具调用是紧凑日志行，答复是正文。
 import { CaretRight, CaretBottom } from '@element-plus/icons-vue'
 
 defineProps({
   message: { type: Object, required: true },
 })
+
+// 工具结果超过这个长度就默认截断 + 「展开」
+const SHORT_LEN = 100
 </script>
 
 <template>
   <div class="message" :class="message.role">
     <div class="bubble">
-      <div class="role">{{ message.role === 'user' ? '你' : 'agent' }}</div>
+      <!-- 用户消息标注角色；assistant 全宽正文不标（Claude Code 风格） -->
+      <div v-if="message.role === 'user'" class="role">你</div>
 
       <template v-if="message.role === 'assistant'">
-        <!-- 推理过程：Claude Code 风格的可折叠"思考"块。
-             thinking[] = 已提交的推理段（每个 tool 事件前 flush 一次）；
-             pending = 正在流式的文本（还没裁决是推理还是答复）。 -->
-        <div v-if="message.thinking.length || message.pending" class="thinking">
-          <button class="thinking-toggle" @click="message.showThinking = !message.showThinking">
-            <el-icon class="caret">
-              <CaretRight v-if="!message.showThinking" />
-              <CaretBottom v-else />
-            </el-icon>
-            <span class="thinking-label">思考</span>
-          </button>
-          <div v-if="message.showThinking" class="thinking-body">
-            <div v-for="(t, i) in message.thinking" :key="i" class="thinking-block">{{ t }}</div>
-            <div v-if="message.pending" class="thinking-block pending">
-              {{ message.pending }}<span v-if="message.streaming" class="cursor">▍</span>
-            </div>
+        <!-- 时间线：思考/工具/结果按发生顺序交错 -->
+        <template v-for="(ev, i) in message.timeline" :key="i">
+          <!-- 推理：每条独立、可折叠 -->
+          <div v-if="ev.kind === 'reason'" class="think">
+            <button class="think-toggle" @click="ev.open = !ev.open">
+              <el-icon class="caret">
+                <CaretRight v-if="!ev.open" />
+                <CaretBottom v-else />
+              </el-icon>
+              <span class="think-label">思考</span>
+            </button>
+            <div v-if="ev.open" class="think-body">{{ ev.text }}</div>
           </div>
-        </div>
 
-        <!-- 工具事件：终端日志行。tool 先出现（调用了什么），result 跟在后面 -->
-        <div v-for="(ev, i) in message.events" :key="i" class="event" :class="ev.kind">
-          <span v-if="ev.kind === 'tool'" class="mono">
+          <!-- 工具调用 -->
+          <div v-else-if="ev.kind === 'tool'" class="event mono">
             <span class="sig">❯</span> {{ ev.name }}({{ ev.args }})
-          </span>
-          <span v-else class="mono">
-            <span class="sig">→</span> {{ ev.name }}: {{ ev.text }}
-          </span>
+          </div>
+
+          <!-- 工具结果：短结果直接展示；长结果默认截断 + 「展开/收起」（②） -->
+          <div v-else class="event result">
+            <span class="mono sig">→ {{ ev.name }}:</span>
+            <span v-if="ev.text.length <= SHORT_LEN" class="mono result-text">{{ ev.text }}</span>
+            <template v-else>
+              <span class="mono result-text">{{ ev.open ? ev.text : ev.text.slice(0, SHORT_LEN) + '…' }}</span>
+              <button class="expand-btn" @click="ev.open = !ev.open">{{ ev.open ? '收起' : '展开' }}</button>
+            </template>
+          </div>
+        </template>
+
+        <!-- 正在流式的未裁决文本：是推理还是答复还没确定，暗色展示 -->
+        <div v-if="message.pending" class="pending mono">
+          {{ message.pending }}<span v-if="message.streaming" class="cursor">▍</span>
         </div>
 
         <!-- 最终答复：done 事件一次性写入（后端已 clean 成干净文本） -->
@@ -63,24 +75,32 @@ defineProps({
   background: var(--surface);
   border: 1px solid var(--border);
 }
-/* 用户消息只有右侧圆角变 0，形成"从边沿冒出来"的方向感（终端风，不做大圆角卡片） */
+/* ③ assistant 全宽正文：不显示容器边框和背景，宽度铺满内容列（输入框范围内） */
+.message.assistant .bubble {
+  max-width: 100%;
+  width: 100%;
+  padding: .15rem 0;
+  background: transparent;
+  border: none;
+}
+/* 用户消息只有右侧圆角变 0，形成"从边沿冒出来"的方向感 */
 .message.user .bubble {
   background: color-mix(in srgb, var(--user) 12%, transparent);
   border-color: color-mix(in srgb, var(--user) 35%, transparent);
 }
-.role { font-size: .7rem; color: var(--text-dim); margin-bottom: .25rem; }
-.message.user .role { color: var(--user); }
+.role { font-size: .7rem; color: var(--user); margin-bottom: .25rem; }
 
-/* 推理块：暗色、可折叠，与工具事件同宽（左边延到气泡边缘） */
-.thinking {
-  margin: .3rem 0 .3rem -.85rem;
-  padding: .25rem .5rem .25rem .7rem;
+/* ---- 时间线条目：思考 / 工具 / 结果 ---- */
+/* 推理块：暗色、每条独立可折叠 */
+.think {
+  margin: .3rem 0;
+  padding: .25rem .55rem .3rem .7rem;
   border-left: 3px solid var(--text-dim);
   border-radius: 0 3px 3px 0;
   background: var(--surface-2);
   font-size: .78rem;
 }
-.thinking-toggle {
+.think-toggle {
   display: flex;
   align-items: center;
   gap: .35rem;
@@ -90,27 +110,23 @@ defineProps({
   cursor: pointer;
   padding: .1rem 0;
   font-size: .78rem;
+  font-family: inherit;
 }
-.thinking-toggle:hover { color: var(--text); }
+.think-toggle:hover { color: var(--text); }
 .caret { font-size: .8rem; }
-.thinking-label { font-weight: 600; }
-.thinking-body {
+.think-label { font-weight: 600; }
+.think-body {
   margin-top: .3rem;
-  display: flex;
-  flex-direction: column;
-  gap: .3rem;
-}
-.thinking-block {
   color: var(--text-dim);
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.5;
 }
 
-/* 工具事件 = 终端日志行：左侧语义色边条 + 等宽字体 */
+/* 工具调用/结果 = 终端日志行：左侧语义色边条 + 等宽字体 */
 .event {
-  margin: .3rem 0 .3rem -.85rem;   /* 左边延到气泡边缘，边条顶到气泡左上 */
-  padding: .25rem .5rem .25rem .7rem;
+  margin: .3rem 0;
+  padding: .3rem .55rem .3rem .7rem;
   border-left: 3px solid;
   border-radius: 0 3px 3px 0;
   background: var(--surface-2);
@@ -121,6 +137,30 @@ defineProps({
 .event.tool { border-left-color: var(--tool); color: var(--tool); }
 .event.result { border-left-color: var(--result); color: var(--result); }
 .sig { font-weight: 700; }
+.result-text { color: var(--result); }
+.expand-btn {
+  margin-left: .5rem;
+  padding: 0 .35rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: .7rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.expand-btn:hover { color: var(--text); border-color: var(--user); }
+
+/* 流式中的未裁决文本：暗色，和最终答复区分 */
+.pending {
+  margin: .3rem 0;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+  font-size: .88rem;
+}
+
 .text { white-space: pre-wrap; word-break: break-word; font-size: .95rem; line-height: 1.6; }
 .cursor {
   color: var(--user);
