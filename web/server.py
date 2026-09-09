@@ -70,13 +70,21 @@ def build_agent(provider: str) -> Agent:
 
 class ChatRequest(BaseModel):
     prompt: str
-    # 可选：多轮对话的上下文（user/assistant 文本消息）。
+    # 会话记忆：同一 session_id 复用同一个 Agent 实例（history 跨请求保留），
+    # 前端不用每次回传 history，上下文自动续上。
+    session_id: str | None = None
+    # 可选：无 session_id 时的一次性上下文（user/assistant 文本消息）。
     # 工具调用/结果是每次运行的内部过程，前端不需要回传，Agent 会重新生成。
     history: list[dict] | None = None
 
 
 def make_app(provider: str = "anthropic") -> FastAPI:
     app = FastAPI(title="CodeOps Agent 网页版", version="0.1.0")
+
+    # 会话记忆：session_id → Agent 实例（history 跨请求保留）。
+    # 已知代价：dict 无限增长 + Agent 持有 LLM 客户端，演示够用；
+    # 生产要换 Redis 存储 / 加过期清理 / 按会话加锁（并发写 history 会竞争）。
+    sessions: dict[str, Agent] = {}
 
     # CORS：开发期放开所有来源（Vue 前端跑在另一个端口，跨域访问后端）
     app.add_middleware(
@@ -96,13 +104,26 @@ def make_app(provider: str = "anthropic") -> FastAPI:
         # 浏览器测试页：直接消费 SSE 流，验证事件协议（10C 的 Vue 前端用同样方式）
         return FileResponse(os.path.join(os.path.dirname(os.path.abspath(__file__)), "test.html"))
 
+    @app.get("/api/sessions")
+    def list_sessions():
+        # 调试/教学用：看每个会话的上下文长度（验证会话记忆是否真的生效）。
+        # mock 不真推理，输出看不出"记住了"，但 history 长度会随轮次增长。
+        return {"count": len(sessions),
+                "sessions": {sid: len(a.history) for sid, a in sessions.items()}}
+
     @app.post("/api/chat")
     async def chat(req: ChatRequest):
-        agent = build_agent(provider)
-        if req.history:
-            # 只接受 user/assistant 文本消息；工具消息是内部过程，不接收
-            agent.history = [{"role": m["role"], "content": m["content"]}
-                             for m in req.history if m.get("role") in ("user", "assistant")]
+        if req.session_id and req.session_id in sessions:
+            # 会话命中：复用 Agent，history 已经在里面，忽略请求里的 history
+            agent = sessions[req.session_id]
+        else:
+            agent = build_agent(provider)
+            if req.history:
+                # 只接受 user/assistant 文本消息；工具消息是内部过程，不接收
+                agent.history = [{"role": m["role"], "content": m["content"]}
+                                 for m in req.history if m.get("role") in ("user", "assistant")]
+            if req.session_id:
+                sessions[req.session_id] = agent   # 新会话，存起来供下次复用
 
         def event_stream():
             gen = agent.run(req.prompt, stream=True, verbose=False)
