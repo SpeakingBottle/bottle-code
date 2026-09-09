@@ -97,7 +97,7 @@
 
 ## 学习进度
 
-- 当前课程：**第11课（代码 Agent 闭环）已完结**（11A~11D + 练习11A）—— 8 课主线 + 第9~11课进阶（三合一）全部完成；第10课（网页版）已完结（10A~10G）
+- 当前课程：**全部完结** —— 8 课主线 + 第9~11课进阶（三合一）全部完成（含第9课复盘）；第10课（网页版）已完结（10A~10G）；第11课（代码 Agent 闭环）已完结（11A~11D + 练习11A）
   - 进阶路线（已确认，三合一，即第9~11课）：第9课 生产级 RAG（embedding + 向量库 + 混合检索 + 检索评估）→ 第10课 Bottle Code 网页版（流式 + FastAPI + Vue）→ 第11课 代码 Agent 闭环（写代码→跑测试→改）
   - **10A 流式输出** ✅：`llm.py` 加 `chat_stream()`（OpenAI/Anthropic/Mock 三后端：yield 文本增量 + return 完整消息，工具调用轮次不 yield 文本）；`agent.py` 的 `run()` 加 `stream=True`（生成器逐段 yield 增量，`StopIteration.value` 拿最终答复，非流式行为不变）；`examples/stream_demo.py`（mock 打字机效果；真实 API 验证：纯文本流式 + final_answer 结构化收尾都正常）
   - **练习10A 流式事件协议** ✅：`run(stream=True)` 从 yield 裸文本升级为 yield 统一 dict 事件——`{"type":"delta","text":...}` 文本增量 / `{"type":"tool","name","args"}` 工具调用开始 / `{"type":"result","name","text"}` 工具结果，生成器 return 值 = 最终答复；`_run_tool_calls` 返回结果列表 + `stream` 参数（流式下抑制 verbose 重复打印，事件承载展示）；`stream_demo.py` 按事件类型渲染（工具进度在文本前出现）；验收：mock 工具事件先于文本 ✅、纯文本回答无工具事件 ✅、不改 llm.py ✅、非流式回归（mock_demo/eval_harness 1/4）✅、真实 API 验证 calculator 事件 + final_answer 结构化收尾 ✅
@@ -139,7 +139,7 @@
     - **9B 混合检索** ✅：手写 BM25 + 向量 RRF 排名融合（`use_hybrid=False` 可退化为纯向量）
     - **9C 检索评估** ✅：`examples/rag_eval.py`（8 查询 × hit@3，对比三方案）；知识库补全（project.md 加部署步骤、lesson_notes.md 补第4~8课笔记、新增 architecture.md / troubleshooting.md）
     - **9D 查** ✅：混合版 100% > 词频版 88% = embedding 版 88%；评测逮住两个坏评测项（project.md 无部署内容、lesson_notes.md 无第7课内容）——评测逼你验证对数据的假设；语义改写查询"怎么把服务跑起来"是 embedding 的强项（词频版唯一挂掉的一条）
-    - 复盘：待做
+    - 复盘 ✅：见 `knowledge/lesson_notes.md` 第9课复盘——五问沉淀：①混合检索 > 单一方案（不同查询需要不同信号，RRF 按排名取分免调权重）；②词频=embedding 打平是因为库小、查询贴近原文（评测结果取决于数据规模）；③评测逮住坏评测项=检索上限由数据决定，先补数据再谈算法；④换场景：库变大 embedding 拉开、术语查询 BM25 更好、生产按查询类型路由；⑤依赖是成本、回退是保险（kb_search fallback）
   - 第10课：Bottle Code 网页版（流式 + FastAPI + Vue，10A~10G 全部完结）
   - 第11课：代码 Agent 闭环（run_python 执行工具 + 闭环演示 + 编码闭环评测器 + 步数/锚定 + 空响应级联修复）
 - 环境：Python 3.13 虚拟环境 `.venv`；运行激活 venv 或用 `.venv/Scripts/python.exe`；真实 key 在本地 `.env`（已 gitignore）
