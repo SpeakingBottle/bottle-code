@@ -6,13 +6,13 @@ setlocal
 REM ============================================================
 REM  CodeOps Agent 网页版 · 一键启动脚本（⑤）
 REM  用法：
-REM     start.bat                -> 后端用 mock（离线可跑，无需 key）
-REM     start.bat anthropic      -> 后端接真实 API（需 .env 配好 key）
+REM     start.bat                -> 默认接真实 API（anthropic，需 .env 配好 key）
+REM     start.bat mock           -> 离线可跑，无需 key
 REM     start.bat openai         -> 后端接 OpenAI 兼容接口
 REM  效果：后端和前端各开一个窗口；前端 http://localhost:5173
 REM ============================================================
 
-set PROVIDER=mock
+set PROVIDER=anthropic
 if not "%~1"=="" set PROVIDER=%~1
 
 REM ---- 环境自检：.venv 要存在，否则给出初始化命令 ----
