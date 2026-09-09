@@ -58,7 +58,7 @@ def main():
     parser.add_argument("--provider", choices=["mock", "openai", "openai-compatible", "anthropic"], default="mock")
     parser.add_argument("--model", default=None)
     parser.add_argument("--base-url", default=None)
-    parser.add_argument("--max-steps", type=int, default=12)
+    parser.add_argument("--max-steps", type=int, default=24)
     parser.add_argument("--prompt", "-p", help="一次性执行完这条提示后退出；不传则进入交互问答")
     args = parser.parse_args()
 

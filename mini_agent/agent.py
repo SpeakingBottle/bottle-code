@@ -70,7 +70,7 @@ def _render_messages(msgs: list[dict], per_line: int = 140, cap: int = 2000) -> 
 class Agent:
     """核心：把“大模型 + 工具 + 循环 + 记忆”串起来的主循环。"""
 
-    def __init__(self, llm: LLM, max_steps: int = 12, max_context_messages: int = 20,
+    def __init__(self, llm: LLM, max_steps: int = 24, max_context_messages: int = 20,
                  system_prompt: str = DEFAULT_SYSTEM_PROMPT,
                  allowed_tools: set[str] | None = None,
                  audit: AuditLogger | None = None, max_trace_chars: int = 300):
@@ -86,6 +86,7 @@ class Agent:
         self.trace: list[dict] = []    # 内存轨迹：本次运行的完整时间线（调试/复盘用）
         self.verbose = True
         self._warned_trim = False
+        self._anchor = None   # 本轮任务的用户问题：滑动窗口把它裁掉时重新钉回窗口最前（目标锚定）
 
     def _record_trace(self, event: dict):
         """单一漏斗：所有事件先记进内存轨迹；若挂了审计器，再落盘 JSONL。
@@ -106,6 +107,11 @@ class Agent:
             # 窗口开头若落在孤立的 tool 结果上，把它丢掉（它的 assistant 工具调用已被裁掉）
             while recent and recent[0]["role"] == "tool":
                 recent.pop(0)
+            # 目标锚定：超长任务（几十步）里滑动窗口会裁掉"本轮用户问题"，模型跑到一半
+            # 会"忘了自己在干嘛"（实测回"没有收到具体任务指令"）。裁掉就把它钉回窗口最前；
+            # 还在窗口里（短任务）则不动，避免重复注入。
+            if self._anchor is not None and {"role": "user", "content": self._anchor} not in recent:
+                recent.insert(0, {"role": "user", "content": self._anchor})
             if not self._warned_trim and self.verbose:
                 print(f"  [memory] 短期上下文已裁剪为最近 {len(recent)} 条消息（滑动窗口）")
                 self._warned_trim = True
@@ -174,6 +180,7 @@ class Agent:
         还是 chat（一次性返回）。工具调用轮次不 yield 文本，行为与非流式一致。
         """
         self.verbose = verbose
+        self._anchor = user_input   # 目标锚定：长任务里本轮用户问题可能被滑动窗口裁掉，用它兜底
         if user_input is not None:
             self.history.append({"role": "user", "content": user_input})
 

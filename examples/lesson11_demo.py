@@ -97,7 +97,7 @@ def main():
     args = parser.parse_args()
 
     llm = build_llm(args.provider, args.model)
-    agent = Agent(llm=llm, max_steps=24)
+    agent = Agent(llm=llm, max_steps=40)   # 编码闭环通常几轮内；宽任务（如分析项目）留足余量
 
     print(f"任务：{args.task}\n")
     result = agent.run(args.task)
