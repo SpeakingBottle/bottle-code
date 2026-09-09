@@ -105,11 +105,19 @@ def _to_anthropic_messages(messages):
     - system 提示词放顶层参数
     - 工具调用是 assistant 消息里的 tool_use 块
     - 工具结果是 user 消息里的 tool_result 块
+
+    **关键约束**：同一 assistant 消息里的**所有** tool_use，其 tool_result 必须放在
+    紧随其后的**同一条** user 消息里（每个 tool_use 一个 tool_result 块）。
+    Agent 的历史是"每个工具结果各占一条 role=tool"（OpenAI 式），这里把**连续的**
+    role=tool 合并成一条 user，避免并行/连续调用多个工具时触发
+    "tool_use ids found without tool_result blocks" 400。
     """
     system = ""
     out = []
-    for m in messages:
-        role = m["role"]
+    i, n = 0, len(messages)
+    while i < n:
+        m = messages[i]
+        role = m.get("role")
         if role == "system":
             system += m.get("content", "")
         elif role == "user":
@@ -127,14 +135,19 @@ def _to_anthropic_messages(messages):
                 })
             out.append({"role": "assistant", "content": blocks})
         elif role == "tool":
-            out.append({
-                "role": "user",
-                "content": [{
+            # 把这一整段连续的工具结果合并成一条 user，一条里放多个 tool_result 块
+            results = []
+            while i < n and messages[i].get("role") == "tool":
+                t = messages[i]
+                results.append({
                     "type": "tool_result",
-                    "tool_use_id": m.get("tool_call_id", ""),
-                    "content": m.get("content", ""),
-                }],
-            })
+                    "tool_use_id": t.get("tool_call_id", ""),
+                    "content": t.get("content", ""),
+                })
+                i += 1
+            out.append({"role": "user", "content": results})
+            continue   # 上面的 while 已推进 i，跳过末尾的步进
+        i += 1
     return system, out
 
 
