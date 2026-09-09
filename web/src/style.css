@@ -1,0 +1,32 @@
+/* 全局基础样式：聊天页占满视口高度。
+   深色终端风：颜色对应信息类型（青=用户 / 琥珀=tool / 绿=result / 红=error），
+   像终端输出用颜色区分不同类型，而不是装饰性配色。
+   设计 token：
+     --bg      主背景（深蓝黑，比纯黑更有层次）
+     --surface 表面（header / 气泡 / 输入栏）
+     --border  分隔线
+     --text    主文本 / 次文本
+     --user    用户消息（命令提示符青色）
+     --tool / --result / --error  工具事件的语义色 */
+:root {
+  --bg: #0f1720;
+  --surface: #16202b;
+  --surface-2: #1c2936;
+  --border: #243140;
+  --text: #dbe2ea;
+  --text-dim: #7d8a99;
+  --user: #22d3ee;
+  --tool: #f59e0b;
+  --result: #4ade80;
+  --error: #f87171;
+}
+
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body {
+  font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+/* 工具事件 / 代码用等宽字体：内容本身就是代码/工具调用，等宽是内容驱动的选择 */
+.mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }

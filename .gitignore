@@ -43,6 +43,13 @@ result.md
 _*.py
 /knowledge/index.json
 /results/
+.playwright-mcp
+docx_dump*
+docx_struct*
+
+# ---- 前端（10C Vue 工程）----
+web/node_modules/
+web/dist/
 
 # ---- IDE / 操作系统 / 编辑器 ----
 .idea/

@@ -85,6 +85,11 @@ def make_app(provider: str = "anthropic") -> FastAPI:
     # 已知代价：dict 无限增长 + Agent 持有 LLM 客户端，演示够用；
     # 生产要换 Redis 存储 / 加过期清理 / 按会话加锁（并发写 history 会竞争）。
     sessions: dict[str, Agent] = {}
+    # 展示用对话记录：session_id → [{role, content}, ...]（10C 刷新恢复历史用）。
+    # 为什么不复用 Agent.history？因为 history 是"模型上下文"——含 tool_calls、
+    # content=null 的工具轮、无最终答复（final_answer 直接 return 不写回）。
+    # 它服务推理，不是人看的对话。展示记录只存 user 提问 + 最终答复，成对出现。
+    chat_logs: dict[str, list[dict]] = {}
 
     # CORS：开发期放开所有来源（Vue 前端跑在另一个端口，跨域访问后端）
     app.add_middleware(
@@ -111,6 +116,13 @@ def make_app(provider: str = "anthropic") -> FastAPI:
         return {"count": len(sessions),
                 "sessions": {sid: len(a.history) for sid, a in sessions.items()}}
 
+    @app.get("/api/sessions/{sid}/history")
+    def get_history(sid: str):
+        # 读会话的展示用对话记录：前端刷新后恢复聊天记录用（10C）。
+        # 读 chat_logs（user 提问 + 最终答复），不读 Agent.history——
+        # 后者含 tool 消息 / content=null / 无最终答复，是人不可读的模型上下文。
+        return {"sid": sid, "messages": chat_logs.get(sid, [])}
+
     @app.post("/api/chat")
     async def chat(req: ChatRequest):
         if req.session_id and req.session_id in sessions:
@@ -124,6 +136,7 @@ def make_app(provider: str = "anthropic") -> FastAPI:
                                  for m in req.history if m.get("role") in ("user", "assistant")]
             if req.session_id:
                 sessions[req.session_id] = agent   # 新会话，存起来供下次复用
+                chat_logs[req.session_id] = []     # 并建立它的展示记录（10C）
 
         def event_stream():
             gen = agent.run(req.prompt, stream=True, verbose=False)
@@ -135,6 +148,13 @@ def make_app(provider: str = "anthropic") -> FastAPI:
                 # 生成器 return 值 = 最终答复，补发一个 done 事件（前端不用抓 StopIteration）
                 final = e.value
                 yield f"data: {json.dumps({'type': 'done', 'text': final}, ensure_ascii=False)}\n\n"
+                # 完成时把 user 提问 + 最终答复记入展示记录（供刷新恢复）；
+                # 工具事件不记——重新对话时会重新产生。无 session_id 则不记（无状态模式）。
+                if req.session_id:
+                    chat_logs[req.session_id].extend([
+                        {"role": "user", "content": req.prompt},
+                        {"role": "assistant", "content": final},
+                    ])
             except Exception as e:   # API 超时/网络错误等：转成 error 事件，前端能展示
                 yield f"data: {json.dumps({'type': 'error', 'text': str(e)}, ensure_ascii=False)}\n\n"
             finally:
