@@ -52,7 +52,7 @@ function label(ev) {
 function meta(ev) {
   const parts = []
   if (ev.step) parts.push(`step ${ev.step}`)
-  if (ev.elapsed != null) parts.push(`${ev.elapsed}s`)
+  if (ev.elapsed != null) parts.push(`${Number(ev.elapsed).toFixed(2)}s`)
   if (ev.ts) parts.push(ev.ts.slice(11))   // 时间戳只取时分秒
   return parts.join(' · ')
 }
@@ -75,6 +75,9 @@ function body(ev) {
     class="trace-drawer"
   >
     <div class="tp">
+      <div v-if="trace.length" class="tp-summary mono">
+        本会话 {{ trace.length }} 个步骤 · 打开时实时拉取
+      </div>
       <div v-if="loading" class="tp-state">加载中…</div>
       <div v-else-if="error" class="tp-state tp-error">加载失败：{{ error }}</div>
       <div v-else-if="trace.length === 0" class="tp-state">本会话还没有轨迹。</div>
@@ -95,36 +98,46 @@ function body(ev) {
 </template>
 
 <style scoped>
-.tp { display: flex; flex-direction: column; gap: .5rem; }
+.tp { display: flex; flex-direction: column; gap: .6rem; }
+.tp-summary { font-size: .72rem; color: var(--text-dim); }
 .tp-state { color: var(--text-dim); padding: 1rem 0; }
 .tp-error { color: var(--error); }
-.tp-list { display: flex; flex-direction: column; gap: .4rem; }
+.tp-list { display: flex; flex-direction: column; gap: .5rem; }
+/* ③ 每步一张浅色卡片：左边条=事件类型色；卡片内 head 是【图标 · 标签 · 元信息】一行，
+   元信息靠右且不换行；body 用细分割线隔开，扫描更省力 */
 .tp-item {
-  padding: .45rem .6rem;
-  border-left: 3px solid var(--border);
-  border-radius: 0 3px 3px 0;
+  padding: .55rem .7rem;
+  border-left: 3px solid;
+  border-radius: 0 4px 4px 0;
+  background: rgba(15, 23, 32, .35);
   font-size: .8rem;
 }
-/* 按事件类型给左边条上语义色，和聊天时间线一致 */
 .tp-item.tool { border-left-color: var(--tool); }
 .tp-item.assistant { border-left-color: var(--user); }
 .tp-item.final_answer { border-left-color: var(--result); }
 .tp-item.timeout { border-left-color: var(--error); }
-.tp-head { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
-.tp-ic { font-size: .9rem; flex: none; }
+.tp-head { display: flex; align-items: center; gap: .45rem; }
+.tp-ic { font-size: .95rem; flex: none; }
 .ic-tool { color: var(--tool); }
 .ic-assistant { color: var(--user); }
 .ic-final_answer { color: var(--result); }
 .ic-timeout { color: var(--error); }
 .tp-label { font-weight: 600; }
-.tp-meta { color: var(--text-dim); font-size: .72rem; margin-left: auto; }
+.tp-meta {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: .72rem;
+  white-space: nowrap;
+}
 .tp-body {
-  margin-top: .2rem;
+  margin-top: .3rem;
+  padding-top: .35rem;
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.5;
-  font-size: .78rem;
+  font-size: .8rem;
 }
 </style>
 

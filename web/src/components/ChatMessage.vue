@@ -179,6 +179,10 @@ const SHORT_LEN = 100
   font-size: .88rem;
 }
 
+/* ① 背景调亮后，正文/思考/结果直接落在苔藓上，需要一层暗色描边才能读清（照片上垫字的基本功） */
+.text, .pending, .think-body, .think-label, .ev-tag, .ev-call, .result-text {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .55), 0 0 4px rgba(0, 0, 0, .35);
+}
 .text { white-space: pre-wrap; word-break: break-word; font-size: .95rem; line-height: 1.6; }
 .cursor {
   color: var(--user);

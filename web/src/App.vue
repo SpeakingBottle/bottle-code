@@ -61,7 +61,13 @@ async function send(prompt) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt, session_id: sessionId.value || null }),
     })
-    if (!resp.ok) throw new Error('HTTP ' + resp.status)
+    if (!resp.ok) {
+      // 502 = Vite 代理转发失败：后端没在 :8000 跑。给可行动提示，而不是裸报 502。
+      const hint = resp.status === 502
+        ? '后端未启动（Vite 连不上 :8000）。请运行 start.bat，或单独启动 web/server.py。'
+        : 'HTTP ' + resp.status
+      throw new Error(hint)
+    }
 
     const reader = resp.body.getReader()
     const decoder = new TextDecoder()
@@ -84,7 +90,9 @@ async function send(prompt) {
       if (wasNearBottom) scrollToBottom()
     }
   } catch (e) {
-    assistant.content += '\n[错误] ' + e.message
+    // 网络层失败（Failed to fetch）= 后端没起；同样是给可行动的提示
+    const msg = /fetch/i.test(e.message) ? '无法连接后端 :8000，请先运行 start.bat 启动后端。' : e.message
+    assistant.content += '\n[错误] ' + msg
     scrollToBottom()
   } finally {
     assistant.streaming = false
@@ -227,7 +235,7 @@ async function scrollToBottom() {
   scrollbar-width: none;                      /* Firefox */
 }
 .chat-messages::-webkit-scrollbar { display: none; }  /* Chrome/Edge/Safari */
-.empty-hint { text-align: center; margin-top: 4rem; color: var(--text-dim); }
+.empty-hint { text-align: center; margin-top: 4rem; color: var(--text-dim); text-shadow: 0 1px 2px rgba(0, 0, 0, .55), 0 0 4px rgba(0, 0, 0, .35); }
 .empty-line { font-size: .95rem; color: var(--user); margin: 0; }
 .empty-sub { font-size: .85rem; margin: .4rem 0 0; }
 </style>
