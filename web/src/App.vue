@@ -1,9 +1,10 @@
 <script setup>
 // 聊天页骨架：消息列表 + 输入框 + SSE 消费逻辑
 import { ref, reactive, nextTick } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Memo } from '@element-plus/icons-vue'
 import ChatMessage from './components/ChatMessage.vue'
 import ChatInput from './components/ChatInput.vue'
+import TracePanel from './components/TracePanel.vue'
 
 // ---- 会话记忆（10B）：session_id 存 localStorage，刷新后同一会话续上 ----
 const sessionId = ref(localStorage.getItem('codeops_session_id') || '')
@@ -14,6 +15,7 @@ if (!sessionId.value) {
 }
 const messages = ref([])
 const sending = ref(false)
+const traceOpen = ref(false)   // ④ 会话轨迹展示抽屉的开关
 
 function newSession() {
   sessionId.value = crypto.randomUUID()
@@ -158,6 +160,8 @@ async function scrollToBottom() {
         <el-tooltip :content="sessionId" placement="bottom">
           <span class="status mono">#{{ sessionId.slice(0, 8) }}</span>
         </el-tooltip>
+        <!-- ④ 会话轨迹入口：打开抽屉看本会话的完整轨迹 -->
+        <el-button size="small" :icon="Memo" @click="traceOpen = true">轨迹</el-button>
         <el-button size="small" :icon="Plus" @click="newSession">新建会话</el-button>
       </div>
     </header>
@@ -175,6 +179,8 @@ async function scrollToBottom() {
 
       <ChatInput :disabled="sending" @send="send" />
     </div>
+
+    <TracePanel v-model="traceOpen" :sid="sessionId" />
   </div>
 </template>
 
@@ -189,8 +195,11 @@ async function scrollToBottom() {
   align-items: center;
   justify-content: space-between;
   padding: .7rem 1.4rem;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  /* ② 头部改磨砂玻璃：苔藓若隐若现，文字依然清晰 */
+  background: rgba(22, 32, 43, .6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
 }
 .title { display: flex; align-items: baseline; gap: .5rem; }
 .prompt { color: var(--user); font-family: ui-monospace, Consolas, monospace; font-weight: 700; }

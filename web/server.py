@@ -148,6 +148,15 @@ def make_app(provider: str = "anthropic") -> FastAPI:
         # 后者含 tool 消息 / content=null / 无最终答复，是人不可读的模型上下文。
         return {"sid": sid, "messages": chat_logs.get(sid, [])}
 
+    @app.get("/api/sessions/{sid}/trace")
+    def get_trace(sid: str):
+        # ④ 会话轨迹展示入口：读该会话 Agent 实例的内存轨迹（第7课 format_trace 的数据源）。
+        # 为什么读 trace 而不是 logs/agent.jsonl？trace 天然按会话隔离
+        #（sessions[sid] → Agent.trace），而 JSONL 是全局 append-only、事件里没有
+        # session_id，按会话过滤得额外加字段；web 后端也没接 audit，读它更直接。
+        agent = sessions.get(sid)
+        return {"sid": sid, "trace": agent.trace if agent else []}
+
     @app.post("/api/chat")
     async def chat(req: ChatRequest):
         if req.session_id and req.session_id in sessions:

@@ -41,12 +41,15 @@ function submit() {
   display: flex;
   gap: .6rem;
   padding: .9rem 1.1rem;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
+  /* ② 输入栏同样磨砂玻璃，和头部一体：苔藓透进来但输入不受影响 */
+  background: rgba(22, 32, 43, .6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
 }
 /* el-input 的边框是 box-shadow 画的（EP 惯例），用 :deep 覆盖成终端风 */
 .input-bar :deep(.el-input__wrapper) {
-  background: var(--bg);
+  background: rgba(15, 23, 32, .5);
   box-shadow: 0 0 0 1px var(--border) inset;
 }
 .input-bar :deep(.el-input__wrapper.is-focus) {

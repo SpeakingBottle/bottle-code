@@ -28,8 +28,27 @@
 html, body, #app { height: 100%; margin: 0; }
 body {
   font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
-  background: var(--bg);
+  /* ② 页面背景换成苔藓图（web/public/moss.jpg，居中铺满、随滚动固定），
+     底色仍是 --bg（图片加载失败时的兜底）。 */
+  background-color: var(--bg);
+  background-image: url('/moss.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
   color: var(--text);
+}
+/* ② 深色遮罩层：让苔藓"隐约可见"、文字依然清晰。这就是"背景透明度"的调法——
+   #app 自身不设背景（是透明的），所以 z-index:-1 的遮罩画在 body 的苔藓图之上、
+   #app 内容之下；想更透/更暗，改下面这个 rgba 的 alpha。 */
+#app { position: relative; }
+#app::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(rgba(15, 23, 32, .72), rgba(15, 23, 32, .85));
+  pointer-events: none;
 }
 /* 工具事件 / 代码用等宽字体：内容本身就是代码/工具调用，等宽是内容驱动的选择 */
 .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
