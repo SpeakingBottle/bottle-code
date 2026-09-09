@@ -5,7 +5,7 @@
 //（含 assistant 最终答复、final_answer 结构化输出、timeout），是审计/复盘的可见入口。
 // trace 是 Agent 实例上累积的（跨多次 run 追加），所以同一会话里会越积越长。
 import { ref, watch } from 'vue'
-import { Cpu, Tools, Document, CircleCheck, Warning } from '@element-plus/icons-vue'
+import { Cpu, Tools, Document, CircleCheck, Warning, Files, ChatDotRound } from '@element-plus/icons-vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -36,15 +36,20 @@ async function load() {
 // 打开时拉一次；每次打开都重新拉（轨迹随对话增长）
 watch(() => props.modelValue, (open) => { if (open) load() })
 
-// —— 图标 / 标签：与聊天时间线同一套 EP 图标语言（③）——
+// —— 图标 / 标签：与聊天时间线同一套 EP 图标语言（③）。
+// 新增两类（② 轨迹补全）：thinking=模型思考（Cpu，模型推理）/ prompt=
+// 提示词·上下文（Files，发给模型的消息快照）。assistant 从 Cpu 让给 thinking。
 function icon(role) {
-  return { tool: Tools, final_answer: CircleCheck, assistant: Cpu, timeout: Warning }[role] || Cpu
+  return { tool: Tools, final_answer: CircleCheck, assistant: ChatDotRound,
+           thinking: Cpu, prompt: Files, timeout: Warning }[role] || Cpu
 }
 function label(ev) {
   switch (ev.role) {
     case 'tool': return `调用工具：${ev.name}`
     case 'final_answer': return '最终答复'
     case 'assistant': return '答复'
+    case 'thinking': return '模型思考'
+    case 'prompt': return `提示词 · 上下文（${ev.args?.n_messages ?? 0} 条消息）`
     case 'timeout': return '达到最大步数，任务未完成'
     default: return ev.role || '事件'
   }
@@ -115,14 +120,25 @@ function body(ev) {
 .tp-item.tool { border-left-color: var(--tool); }
 .tp-item.assistant { border-left-color: var(--user); }
 .tp-item.final_answer { border-left-color: var(--result); }
+.tp-item.thinking { border-left-color: var(--text-dim); }
+.tp-item.prompt { border-left-color: var(--text-dim); }
 .tp-item.timeout { border-left-color: var(--error); }
 .tp-head { display: flex; align-items: center; gap: .45rem; }
 .tp-ic { font-size: .95rem; flex: none; }
 .ic-tool { color: var(--tool); }
 .ic-assistant { color: var(--user); }
 .ic-final_answer { color: var(--result); }
+.ic-thinking { color: var(--text-dim); }
+.ic-prompt { color: var(--text-dim); }
 .ic-timeout { color: var(--error); }
+/* 名称（标签）随图标一起着色；只有它带颜色，正文统一灰——突出最终答复（用户要求） */
 .tp-label { font-weight: 600; }
+.tp-item.tool .tp-label { color: var(--tool); }
+.tp-item.assistant .tp-label { color: var(--user); }
+.tp-item.final_answer .tp-label { color: var(--result); }
+.tp-item.thinking .tp-label { color: var(--text-dim); }
+.tp-item.prompt .tp-label { color: var(--text-dim); }
+.tp-item.timeout .tp-label { color: var(--error); }
 .tp-meta {
   margin-left: auto;
   color: var(--text-dim);
@@ -133,7 +149,7 @@ function body(ev) {
   margin-top: .3rem;
   padding-top: .35rem;
   border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  color: var(--text);
+  color: var(--text-dim);
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.5;

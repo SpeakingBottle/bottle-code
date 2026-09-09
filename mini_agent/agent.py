@@ -36,6 +36,35 @@ kb_search：当问题涉及项目资料/文档/笔记时使用
 """
 
 
+def _render_messages(msgs: list[dict], per_line: int = 140, cap: int = 2000) -> str:
+    """把发给模型的消息渲染成可读的短行文本（轨迹里展示「提示词/上下文」用）。
+
+    不存完整 JSON（臃肿、且带工具调用细节），每个消息取「角色 + 前 per_line 字符」，
+    系统提示/工具结果这类长的截断，最后整体压到 cap 字符内——复盘时扫一眼"模型看到了什么"。
+    """
+    out = []
+    for m in msgs:
+        role = m.get("role")
+        if role == "system":
+            head = f"[system] {m.get('content', '')}"
+        elif role == "tool":
+            head = f"[tool:{str(m.get('tool_call_id', ''))[:12]}] {m.get('content', '')}"
+        elif role == "assistant":
+            content = m.get("content")
+            if content:
+                head = f"[assistant] {content}"
+            else:
+                names = ",".join(c["function"]["name"] for c in m.get("tool_calls", []))
+                head = f"[assistant] <tool_calls: {names}>"
+        else:
+            head = f"[{role}] {m.get('content', '')}"
+        out.append(head[:per_line] + ("…" if len(head) > per_line else ""))
+    text = "\n".join(out)
+    if len(text) > cap:
+        text = text[:cap] + "\n…(截断)"
+    return text
+
+
 class Agent:
     """核心：把“大模型 + 工具 + 循环 + 记忆”串起来的主循环。"""
 
@@ -153,15 +182,31 @@ class Agent:
         for step in range(self.max_steps):
             if verbose:
                 print(f"\n--- Step {step + 1} ---")
+            # 这一轮发给模型的消息快照 = 「提示词/上下文」（system + 窗口切好的历史）。
+            # 先记轨迹再发，复盘时能"按步骤对"——模型的每轮回答对应哪一批输入。
+            msgs = self._messages()
+            self._record_trace({
+                "step": step + 1, "role": "prompt", "name": "(context)",
+                "args": {"n_messages": len(msgs)},
+                "result": _render_messages(msgs),
+            })
             if stream:
-                gen = self.llm.chat_stream(self._messages(), tool_schemas)
+                gen = self.llm.chat_stream(msgs, tool_schemas)
                 try:
                     while True:
                         yield {"type": "delta", "text": next(gen)}   # 文本增量包成事件
                 except StopIteration as e:
                     response = e.value   # 生成器 return 的完整消息（含 tool_calls）
             else:
-                response = self.llm.chat(self._messages(), tool_schemas)
+                response = self.llm.chat(msgs, tool_schemas)
+
+            # 模型的推理过程记入轨迹（「模型思考」）。只进轨迹供展示，不写回 history——
+            # 否则触发 Anthropic"thinking 块必须带 signature"的校验（多轮工具循环会 400）。
+            if response.get("thinking"):
+                self._record_trace({
+                    "step": step + 1, "role": "thinking", "name": "(reasoning)",
+                    "args": {}, "result": response["thinking"][:self.max_trace_chars],
+                })
 
             if response.get("tool_calls"):
                 # 判断是否是"终止工具"

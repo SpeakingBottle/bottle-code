@@ -152,11 +152,15 @@ def _to_anthropic_messages(messages):
 
 
 def _from_anthropic_response(resp):
-    """Anthropic 响应块数组 → OpenAI 风格 dict（content + tool_calls）。
+    """Anthropic 响应块数组 → OpenAI 风格 dict（content + tool_calls + thinking）。
 
-    thinking 块是模型的推理过程，跳过不展示；text 拼成 content，tool_use 转成 tool_calls。
+    text 拼成 content，tool_use 转成 tool_calls。
+    thinking 块是模型的推理过程：**不回传**（History 里没有它，多轮工具循环照旧工作、
+    也避免了"thinking 块必须带 signature"的校验），只拿出来塞进返回 dict 的 `thinking`，
+    供 agent.py 记入轨迹（做「模型思考」展示）。流式 get_final_message() 也会还原 thinking，
+    所以流式/非流式共用本函数都能带上。
     """
-    content_parts, tool_calls = [], []
+    content_parts, tool_calls, thinking_parts = [], [], []
     for block in resp.content:
         if block.type == "text":
             content_parts.append(block.text)
@@ -169,10 +173,13 @@ def _from_anthropic_response(resp):
                     "arguments": json.dumps(block.input, ensure_ascii=False),
                 },
             })
+        elif block.type == "thinking":
+            thinking_parts.append(getattr(block, "thinking", "") or "")
     return {
         "role": "assistant",
         "content": "".join(content_parts) or None,
         "tool_calls": tool_calls or None,
+        "thinking": "".join(thinking_parts) or None,
     }
 
 

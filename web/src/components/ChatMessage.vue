@@ -148,14 +148,16 @@ const SHORT_LEN = 100
 
 /* ③ 图标 + 说明文字：一行【图标 · 标签 · 内容】，图标颜色继承事件语义色 */
 .ev-head { display: inline-flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+/* 只有图标 + 语义标签带颜色（继承 .event 的类型色）；正文/参数这些"数据"统一灰，
+   让最终答复正文（.text=亮色）成为视觉焦点（用户要求） */
 .ev-tag { font-weight: 600; }
-.ev-call { color: var(--text); word-break: break-all; }
+.ev-call { color: var(--text-dim); word-break: break-all; }
 .ev-body { margin-top: .25rem; }
 .ticon { font-size: .85rem; flex: none; }
 .ticon-reason { color: var(--text-dim); }
 .ticon-tool { color: var(--tool); }
 .ticon-result { color: var(--result); }
-.result-text { color: var(--result); word-break: break-all; }
+.result-text { color: var(--text-dim); word-break: break-all; }
 .expand-btn {
   margin-left: .5rem;
   padding: 0 .35rem;
