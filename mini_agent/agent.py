@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import time
+from typing import Generator, Literal, overload
 
 from . import tools
 from .llm import LLM
@@ -156,12 +157,21 @@ class Agent:
             })
         return results
 
+    @overload
+    def run(self, user_input: str | None = None, verbose: bool = True, *, stream: Literal[True]) -> Generator[dict, None, str]: ...
+
+    @overload
+    def run(self, user_input: str | None = None, verbose: bool = True, *, stream: Literal[False] = False) -> str: ...
+
     def run(self, user_input: str | None = None, verbose: bool = True, stream: bool = False):
         """执行任务。
 
         stream=False（默认）：返回最终答复字符串（与之前完全一致）。
         stream=True：返回生成器，逐段 yield 事件（协议见 _run 的 docstring）；
         耗尽后 .value 是最终答复字符串。供网页版逐字展示 + 工具进度渲染。
+
+        类型重载：不传 stream（或显式 False）时类型检查器认为返回 str；
+        传 stream=True 时认为是 Generator——调用方不用再手动消歧。
         """
         if stream:
             return self._run(user_input, verbose, stream=True)

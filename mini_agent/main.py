@@ -6,8 +6,8 @@ import sys
 
 # Windows 控制台默认可能是 cp936，导致中文输出乱码；强制用 UTF-8 输出更通用。
 if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
 
 def _load_env() -> None:
     """加载 .env：优先用 python-dotenv；没装也能用内置兜底解析器，保证项目开箱即用。"""
