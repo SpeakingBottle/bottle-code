@@ -192,7 +192,9 @@ class AnthropicLLM(LLM):
     这样 agent.py 完全不用感知后端差异。
     """
 
-    def __init__(self, model=None, base_url=None, api_key=None, max_tokens=2048):
+    def __init__(self, model=None, base_url=None, api_key=None, max_tokens=4096):
+        # max_tokens 默认 4096（此前 2048）：编码任务（第11课）里模型要先输出长思考块
+        # 再写代码/决定工具调用，2048 会被思考吃光，正文或 tool_calls 无处安放 → 空响应
         try:
             from anthropic import Anthropic
         except ImportError as exc:

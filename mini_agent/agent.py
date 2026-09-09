@@ -20,6 +20,7 @@ DEFAULT_SYSTEM_PROMPT = """你是一个小型自主智能体（Agent），你可
 9. 如果某步失败，分析原因并换一种方式重试，不要硬编或直接放弃。
 10. 对写入/修改类操作，完成后用 read_file 或 run_shell 验证结果真的生效了，再调用 final_answer。
 11. 短期上下文（history）是滑动窗口，只保留最近若干轮；重要事实/用户偏好请用 remember 存入长期记忆，需要时用 recall 检索。
+12. 编码任务必须闭环：写完代码后用 run_python 运行测试脚本验证；失败/超时就根据报错修改实现再跑，直到通过为止——不要自认为写好了就交差，测试通过才算完成。
 
 工具选择表：
 get_current_time：获取当前日期和时间；
@@ -31,7 +32,8 @@ remember：把一条信息写入长期记忆笔记，可加一个标签，用于
 recall：在长期记忆里搜索包含关键词的笔记；
 run_shell：在白名单内执行一条只读检查命令并返回输出（不支持管道/重定向；用于查看目录、查版本、git 状态等）；
 final_answer：任务完成时调用它给出最终答复；把结果填进这些结构化字段；
-kb_search：当问题涉及项目资料/文档/笔记时使用
+kb_search：当问题涉及项目资料/文档/笔记时使用；
+run_python：在项目沙箱内运行一个 Python 脚本并返回退出码与输出——写代码任务里用它跑测试/验证
 
 """
 
@@ -235,6 +237,17 @@ class Agent:
                 if stream:
                     for call, result in zip(response["tool_calls"], results):
                         yield {"type": "result", "name": call["function"]["name"], "text": result}
+                continue
+
+            # 空响应兜底：既无文字也无工具调用（如思考块吃光输出预算）——绝不能把空串
+            # 当"最终答复"交付，给模型重试一轮的机会（失败反馈哲学同样适用于调用本身）。
+            if not response.get("content") and not response.get("tool_calls"):
+                if verbose:
+                    print("  [warn] 模型返回空响应（可能思考过长吃光输出预算），重试一轮")
+                self._record_trace({
+                    "step": step + 1, "role": "empty", "name": "(model)",
+                    "args": {}, "result": "模型返回空响应（无文本无工具调用），本轮重试",
+                })
                 continue
 
             # 模型给出最终答复，结束循环

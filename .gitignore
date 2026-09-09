@@ -44,6 +44,8 @@ data/
 summary.md
 result.md
 _*.py
+# 11课：代码 Agent 闭环演示的工作目录（生成的脚本在这里，不进版本库）
+/examples/_work/
 /knowledge/index.json
 /results/
 .playwright-mcp

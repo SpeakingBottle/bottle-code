@@ -5,6 +5,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 
 from . import knowledge
 
@@ -209,6 +210,42 @@ def run_shell(command: str):
     if proc.returncode != 0:
         return json.dumps({"error": err or f"退出码 {proc.returncode}", "stdout": out})
     return json.dumps({"ok": True, "stdout": out, "stderr": err})
+
+@tool("run_python", "在项目沙箱内运行一个 Python 脚本，返回退出码与输出（写代码任务用：跑测试/验证结果）。只能运行工作目录内的 .py 文件，30 秒超时，输出自动截断。", {
+    "type": "object",
+    "properties": {
+        "script": {"type": "string", "description": "要运行的 .py 脚本路径（相对或绝对路径，必须在工作目录内）"},
+        "args": {"type": "string", "description": "可选命令行参数，用空格分隔，默认空"},
+    },
+    "required": ["script"],
+})
+def run_python(script: str, args: str = ""):
+    # 1) 脚本必须在工作目录内：run_python 是"沙箱内的执行"，不是任意命令执行
+    target = _safe_path(script)
+    if not os.path.isfile(target):
+        return json.dumps({"error": f"脚本不存在: {target}"})
+    # 2) 用当前 Python 解释器（就是项目 .venv 的那个）执行；shell=False 不做任何 shell 解释。
+    #    cwd 设为脚本所在目录：脚本内 `from xxx import yyy` 能拿到同目录模块。
+    parts = [sys.executable, target, *shlex.split(args)]
+    try:
+        proc = subprocess.run(
+            parts, shell=False, capture_output=True, text=True,
+            timeout=30, encoding="utf-8", errors="replace",
+            cwd=os.path.dirname(target),
+        )
+    except subprocess.TimeoutExpired:
+        # 死循环/算法太慢是最常见的"非语法失败"，给模型一个可行动的提示
+        return json.dumps({"error": "运行超时（>30s）——可能死循环或算法太慢，检查循环终止条件/换更快的算法"})
+    except Exception as exc:
+        return json.dumps({"error": f"执行失败: {exc}"})
+    cap = 4000   # 3) 输出截断：traceback/日志可能很长，不要撑爆模型上下文
+    return json.dumps({
+        "exit_code": proc.returncode,
+        "ok": proc.returncode == 0,
+        "stdout": (proc.stdout or "")[:cap],
+        "stderr": (proc.stderr or "")[:cap],
+    }, ensure_ascii=False)
+
 
 @tool("final_answer", "任务完成时调用它给出最终答复；把结果填进这些结构化字段", {
     "type": "object",
