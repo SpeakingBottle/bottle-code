@@ -151,9 +151,9 @@ function body(ev) {
 .trace-drawer .el-drawer__header {
   color: var(--text);
   margin-bottom: 0;
-  padding: 0 0 .8rem;
+  padding: 1rem 1.2rem .7rem;   /* 上下左右留白：标题和关闭按钮别贴边 */
 }
 .trace-drawer .el-drawer__body {
-  padding: 1rem 1.2rem 1.4rem;
+  padding: 0 1.2rem 1.4rem;     /* 顶部交给 header 的底部留白，内容只在左右留白 */
 }
 </style>

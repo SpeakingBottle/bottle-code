@@ -235,7 +235,7 @@ async function scrollToBottom() {
   scrollbar-width: none;                      /* Firefox */
 }
 .chat-messages::-webkit-scrollbar { display: none; }  /* Chrome/Edge/Safari */
-.empty-hint { text-align: center; margin-top: 4rem; color: var(--text-dim); text-shadow: 0 1px 2px rgba(0, 0, 0, .55), 0 0 4px rgba(0, 0, 0, .35); }
+.empty-hint { text-align: center; margin-top: 4rem; color: var(--text-dim); }
 .empty-line { font-size: .95rem; color: var(--user); margin: 0; }
 .empty-sub { font-size: .85rem; margin: .4rem 0 0; }
 </style>

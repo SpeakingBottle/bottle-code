@@ -47,7 +47,7 @@ body {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(rgba(15, 23, 32, .55), rgba(15, 23, 32, .68));
+  background: linear-gradient(rgba(15, 23, 32, .70), rgba(15, 23, 32, .84));
   pointer-events: none;
 }
 /* 工具事件 / 代码用等宽字体：内容本身就是代码/工具调用，等宽是内容驱动的选择 */
