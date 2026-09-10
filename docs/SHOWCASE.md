@@ -16,12 +16,12 @@
 | 能力 | 一句话 | 代码 |
 |---|---|---|
 | Agent 主循环 | 模型→调工具→观察→再想，手写实现 | `mini_agent/agent.py` |
-| 工具系统 | 12+ 工具：计算/读写/记忆/检索/跑Python/收尾 | `mini_agent/tools.py` |
+| 工具系统 | 13 个工具：检索/读写/编辑/记忆/RAG/跑Python/收尾，每个带风险等级 | `mini_agent/tools.py` |
 | 短期记忆 | 滑动窗口裁历史，超长丢目标时锚定回钉 | `agent.py` |
 | 长期记忆 | 笔记 + RAG 检索增强（不只记，还能查） | `tools.py` + `knowledge*.py` |
 | 多 Agent 分工 | 规划者/执行者/评审者，JSON 协议 + 重试 | `mini_agent/roles.py` |
 | MCP 集成 | 自定义 server + 客户端适配器，工具即插即用 | `mini_agent/mcp_client.py` |
-| 可靠性 | 执行层白名单（越权即拦）+ 路径沙箱 + 审计 | `agent.py` + `mini_agent/audit.py` |
+| 权限与可靠性 | 职责边界 + 风险分级（危险操作走审批）+ 敏感路径拒绝 + 审计 | `agent.py` + `mini_agent/approval.py` + `audit.py` |
 | 生产级 RAG | embedding + Chroma + BM25/向量 混合检索 | `mini_agent/knowledge_embed.py` |
 | 网页版 | SSE 流式 + FastAPI 后端 + Vue 3 前端 | `web/` |
 | 编码闭环 | run_python 沙箱 → 写→测→改，隐藏测试验证 | `examples/lesson11_*.py` |
@@ -44,9 +44,21 @@ BM25 关键词 + embedding 向量两类信号，用 **RRF 排名融合**（按�
 用标准协议把外部能力挂进 Agent —— 写了自定义 MCP server `repo-stats`（count_loc / list_files / git_status）+ stdio 客户端适配器。
 > 证据：Agent 主循环几乎不改，就多出 `mcp_*` 工具；今后加数据库/浏览器/CI 能力只需挂 server。
 
-### 5. 可靠性三层纵深（第7课）
-**提示层软约束 + 执行层白名单硬裁决 + 工具自带防御**。越权调用一律拦截，返回 `[SECURITY]` 并回填历史。
-> 证据：`lesson7a_hole` 用剧本模型逼它调用白名单外 `write_file`，从"越权成功"到"越权被拒"全程演示。
+### 5. 权限三道裁决 + 三层纵深（第7课，后经"风险分级"升级）
+
+执行层按**顺序**判三关，顺序不能反（先判"这活是不是我的"，再判"危不危险"）：
+
+1. **职责边界**——`allowed_tools` 硬边界，职责外的写/执行类工具一律拦，返回 `[SECURITY]`。
+   **read 类豁免**：读从不越权，而"写入后自验证"需要它。
+2. **风险分级**——过了边界的 `write`/`execute` 要问 `Approver`，拒绝则返回 `[APPROVAL]`。
+   未配置审批者时放行**但记一条 `role=approval` 轨迹**——让"没人可问所以自动放行"是可审计的决定。
+   `TerminalApprover` 读不到输入时 **fail-closed 拒绝**（不能因为问不到人就放行）。
+3. **工具前置条件**——表驱动，如 `edit_file` 要求该文件先被读过（`[PRECONDITION]`）。
+
+纵深三层：**提示层软约束 + 执行层硬裁决 + 工具自带防御**（路径沙箱 + 敏感路径拒绝）。
+
+> 证据：`lesson7a_hole` 用剧本模型逼它调用白名单外 `write_file`，从"越权成功"到"越权被拒"全程演示；
+> `tooling_permissions_demo.py` 15 项边界全过（剧本 LLM 驱动、确定性、退出码可进 CI）。
 
 ### 6. 可观测性（第7课）
 审计 = append-only 证据文件（含失败/含越权事件）+ 内存 trace + 网页版所见即所得的轨迹抽屉。
@@ -86,7 +98,10 @@ SSE 流式（后端把 `run(stream=True)` 事件转成 `data:` 推送）+ Vue 3 
 | 任务评测集 | 4 任务 × 5 维判定 | 真实 API 3/4（mock 1/4 是 mock 能力边界） |
 | 编码闭环 | 隐藏测试独立判定 | 场景 A PASS / 场景 B FAIL（契约校验） |
 | 审计 | 单次运行落盘事件 | 42 条 |
-| 越权拦截 | 白名单外调用 | 一律 `[SECURITY]` 拦截，不执行 |
+| 越权拦截 | 职责外调用 | 一律 `[SECURITY]` 拦截，不执行（read 类豁免） |
+| 危险操作审批 | 写/执行类调用 | 未配置审批者时放行但**记入轨迹**；`DenyAll` 拒绝；`Terminal` 交互，读不到输入 fail-closed |
+| 敏感路径 | 读含密钥的文件 | `[SENSITIVE]` 拒绝，与危险等级无关 |
+| 工具层验收 | 15 项边界（剧本 LLM，确定性） | `tooling_permissions_demo.py` 15/15，退出码可进 CI |
 | 网页链 | 浏览器全链路 | 流式/轨迹/会话持久化 全部可用 |
 
 ## 六、技术栈
