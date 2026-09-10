@@ -36,20 +36,21 @@ def _load_env() -> None:
 _load_env()
 
 from .agent import Agent
+from .approval import TerminalApprover
 from .llm import AnthropicLLM, MockLLM, OpenAIChatLLM
 
 
-def build_agent(provider, model, base_url):
+def build_agent(provider, model, base_url, approver=None):
     if provider == "mock":
-        return Agent(MockLLM())
+        return Agent(MockLLM(), approver=approver)
     if provider in ("openai", "openai-compatible"):
         if not os.environ.get("OPENAI_API_KEY"):
             raise SystemExit("请在 .env 中设置 OPENAI_API_KEY（或通过 --api-key 传入）")
-        return Agent(OpenAIChatLLM(model=model, base_url=base_url))
+        return Agent(OpenAIChatLLM(model=model, base_url=base_url), approver=approver)
     if provider == "anthropic":
         if not (os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")):
             raise SystemExit("请在 .env 中设置 ANTHROPIC_AUTH_TOKEN（或通过 --api-key 传入）")
-        return Agent(AnthropicLLM(model=model, base_url=base_url))
+        return Agent(AnthropicLLM(model=model, base_url=base_url), approver=approver)
     raise SystemExit(f"不支持的 provider: {provider}")
 
 
@@ -60,9 +61,12 @@ def main():
     parser.add_argument("--base-url", default=None)
     parser.add_argument("--max-steps", type=int, default=24)
     parser.add_argument("--prompt", "-p", help="一次性执行完这条提示后退出；不传则进入交互问答")
+    parser.add_argument("--approve", action="store_true",
+                        help="写文件/跑命令前逐次征求批准（不传则自动放行并记入轨迹）")
     args = parser.parse_args()
 
-    agent = build_agent(args.provider, args.model, args.base_url)
+    approver = TerminalApprover() if args.approve else None
+    agent = build_agent(args.provider, args.model, args.base_url, approver=approver)
     agent.max_steps = args.max_steps
 
     if args.prompt:

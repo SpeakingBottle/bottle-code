@@ -44,6 +44,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from mini_agent.agent import Agent
+from mini_agent.approval import AllowAllApprover, DenyAllApprover
 from mini_agent.llm import AnthropicLLM, MockLLM, OpenAIChatLLM
 
 # 加载 .env（真实 API key）
@@ -109,18 +110,27 @@ def _save_store(meta: dict, chat_logs: dict, histories: dict, traces: dict) -> N
     os.replace(tmp, SESSION_STORE)
 
 
-def build_agent(provider: str) -> Agent:
-    """按 provider 构造 Agent（与 main.py 的 build_agent 同构）。"""
+def build_agent(provider: str, policy: str = "allow") -> Agent:
+    """按 provider 构造 Agent（与 main.py 的 build_agent 同构）。
+
+    网页版没有同步交互通道（SSE 是单向流，Agent 循环没法"挂起等人回话"），
+    所以不做逐次审批，只用启动参数定策略：
+      allow = 自动放行（默认，行为与加审批机制之前一致）
+      deny  = 全部拒绝写/执行类操作
+    真正的异步审批要新增 approval_request 事件 + POST /approve + 可挂起的循环，
+    留给后续；这里先把策略口子留出来，让"这个后端跑在什么权限策略下"可见。
+    """
+    approver = DenyAllApprover() if policy == "deny" else AllowAllApprover()
     if provider == "mock":
-        return Agent(MockLLM(), max_steps=WEB_MAX_STEPS)
+        return Agent(MockLLM(), max_steps=WEB_MAX_STEPS, approver=approver)
     if provider == "anthropic":
         if not (os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")):
             raise SystemExit("请在 .env 中设置 ANTHROPIC_AUTH_TOKEN（或 ANTHROPIC_API_KEY）")
-        return Agent(AnthropicLLM(), max_steps=WEB_MAX_STEPS)
+        return Agent(AnthropicLLM(), max_steps=WEB_MAX_STEPS, approver=approver)
     if provider in ("openai", "openai-compatible"):
         if not os.environ.get("OPENAI_API_KEY"):
             raise SystemExit("请在 .env 中设置 OPENAI_API_KEY")
-        return Agent(OpenAIChatLLM(), max_steps=WEB_MAX_STEPS)
+        return Agent(OpenAIChatLLM(), max_steps=WEB_MAX_STEPS, approver=approver)
     raise SystemExit(f"不支持的 provider: {provider}")
 
 
@@ -167,7 +177,7 @@ class RenameRequest(BaseModel):
     name: str
 
 
-def make_app(provider: str = "anthropic") -> FastAPI:
+def make_app(provider: str = "anthropic", policy: str = "allow") -> FastAPI:
     app = FastAPI(title="Bottle Code 网页版", version="0.1.0")
 
     # 会话存储（⑤）：四份数据 + 内存 Agent 实例。
@@ -272,12 +282,12 @@ def make_app(provider: str = "anthropic") -> FastAPI:
         elif req.session_id and req.session_id in histories:
             # ⑤ 重启后恢复：内存 Agent 没了，用落盘的模型上下文重建（记忆还在），
             # 轨迹也一并恢复（重启后旧会话的轨迹面板仍可见）
-            agent = build_agent(provider)
+            agent = build_agent(provider, policy)
             agent.history = list(histories[req.session_id])
             agent.trace = list(traces.get(req.session_id, []))
             sessions[req.session_id] = agent
         else:
-            agent = build_agent(provider)
+            agent = build_agent(provider, policy)
             if req.history:
                 # 只接受 user/assistant 文本消息；工具消息是内部过程，不接收
                 agent.history = [{"role": m["role"], "content": m["content"]}
@@ -335,10 +345,12 @@ def main():
     parser = argparse.ArgumentParser(description="Bottle Code 网页版后端")
     parser.add_argument("--provider", default="anthropic", choices=["mock", "anthropic", "openai"])
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--approval-policy", default="allow", choices=["allow", "deny"],
+                        help="写/执行类操作的审批策略：allow 自动放行（默认），deny 全部拒绝")
     args = parser.parse_args()
 
     import uvicorn
-    uvicorn.run(make_app(args.provider), host="127.0.0.1", port=args.port)
+    uvicorn.run(make_app(args.provider, args.approval_policy), host="127.0.0.1", port=args.port)
 
 
 # uvicorn web.server:app 用的全局实例；provider 可用环境变量 AGENT_PROVIDER 覆盖
