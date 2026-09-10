@@ -1,5 +1,7 @@
 # Bottle Code：从 0 写一个会调用工具的智能体
 
+**中文** | [English](README.en.md)
+
 这个项目是一个**极简但能跑**的 AI Agent 脚手架，适用于初学者（教学大纲位于AGENTS.md）。它故意不引入复杂框架（LangChain / CrewAI / AutoGen），
 而是用手写的方式把 Agent 的**核心循环**讲清楚——只有理解了这一层，你去看那些框架才会恍然大悟。
 
@@ -13,9 +15,10 @@
 | 聊天页 | 会话轨迹 | 会话列表 |
 |---|---|---|
 | ![聊天页](docs/screenshots/homepage.png) | ![轨迹抽屉](docs/screenshots/trace-panel.png) | ![会话列表](docs/screenshots/sessions-panel.png) |
-| 深色终端风 · 工具事件时间线 · 流式打字机 | 每步「提示词·上下文 / 工具调用 / 答复」可展开 | 多会话切换 / 改名 / 删除，刷新续聊 |
+| 深色终端风 · 工具事件时间线 · 流式打字机 · 最终答复 markdown 渲染 | 每步「提示词注入 / 模型思考 / 调用工具 / 工具结果 / 答复」独立成块、可折叠 | 多会话切换 / 改名 / 删除，刷新续聊 |
 
-> 上方截图用 `mock` 后端跑（无需 API key，离线即可）。接了真实 API 后，模型还会在「轨迹」里留下**思考块**与真实推理。
+> 上方截图接**真实 API**（Anthropic Messages API）跑，所以轨迹里能看到模型的**思考块**和真实推理过程。
+> 想离线体验：`start.bat mock`（无需 API key，但回复是固定文本、没有思考块）。
 
 ## 你已有的知识怎么迁移过来
 
@@ -60,9 +63,9 @@ agent-learn/
 │   ├── codeops.py    # ★ Bottle Code 合成层（Orchestrator + MCP + 审计）
 │   └── main.py       # 命令行入口
 ├── web/              # ★ Bottle Code 网页版（第10课）
-│   ├── server.py     #   FastAPI + SSE 后端（/api/chat）
-│   ├── src/          #   Vue 3 + Vite 前端（聊天页 / 轨迹 / 会话抽屉）
-│   └── start.bat     #   一键启动（后端 + 前端）
+│   ├── server.py     #   FastAPI + SSE 后端（/api/chat · 会话/轨迹接口）
+│   └── src/          #   Vue 3 + Vite 前端（聊天页 / 轨迹抽屉 / 会话抽屉）
+├── start.bat         # ★ 一键启动（后端 :8000 + 前端 :5173，各开一个窗口）
 ├── knowledge/        # 知识库文档（用 build_kb.py 建索引）
 ├── examples/
 │   ├── mock_demo.py        # 离线演示脚本
@@ -116,13 +119,17 @@ python -m mini_agent.main --provider openai --model gpt-4o-mini
 
 ### 3. 启动网页版（第10课 · 交互界面）
 
+在**仓库根目录**运行：
+
 ```
-cd web
-start.bat              # 默认 mock，离线可跑；也可 start.bat anthropic 用真实 API
+start.bat              # 默认 anthropic（真实 API，需 .env 里的 key）
+start.bat mock         # 离线可跑，不需要 key
+start.bat openai       # OpenAI 兼容后端
 ```
 
-它会自动检查依赖、起 FastAPI 后端（:8000）+ Vite 前端（:5173），并各自开一个窗口。
-浏览器打开前端地址，输入任务，就能看到**流式输出 + 工具事件时间线**。也可手动分步：
+它会自动检查 `.venv` 与前端依赖、起 FastAPI 后端（:8000）+ Vite 前端（:5173），并各自开一个窗口。
+浏览器打开 http://localhost:5173，输入任务，就能看到**流式输出 + 工具事件时间线**。
+也可手动分步：
 
 ```
 .venv/Scripts/python.exe web/server.py --provider mock --port 8000   # 后端
@@ -236,6 +243,35 @@ python examples/mcp_demo.py --provider openai-compatible
 - **合成层**（`codeops.py`）只有 ~50 行：注册 MCP 工具 → 追加进执行者白名单 → 给每个角色挂审计 → 暴露一个 `run(task)` 入口。**没有新算法，只有组合**——这就是"复用不是重写"。
 - **演示**：`python examples/codeops_demo.py --provider anthropic`，一个任务同时考验 MCP（统计代码量）+ RAG（查部署步骤）+ 写文件（产出部署清单）+ 多 Agent 分工 + 审计。
 
+### 8. 网页版（`web/`）—— 让 Agent 能被"看着干活"
+
+CLI 只看得到最终结果；网页版把 Agent 的**中间过程**变成可见的界面：
+
+```
+浏览器（Vue 3 + Element Plus）
+   │  POST /api/chat  { message, session_id }
+   ▼
+FastAPI（web/server.py）
+   │  agent.run(stream=True)          ← 10A 的流式事件
+   ▼
+SSE 事件流：delta（文本增量）/ tool（调用工具）/ result（工具结果）/ done（最终答复）
+   │
+   ▼
+前端按事件类型渲染 → 时间线（思考 / 工具 / 结果 按发生顺序交错）+ markdown 最终答复
+```
+
+三个设计要点：
+
+- **流式是事件协议，不是裸文本**：`run(stream=True)` yield 的是 `{"type": "delta" | "tool" | "result"}` 这类结构化事件。
+  只有文本的话，前端无法知道"这段字是推理还是答复"——**pending-buffer**：先缓冲 delta，等后续事件来裁决（工具事件 → 前面是推理；`done` → 它就是答复）。
+- **展示记录 ≠ 模型上下文**：`Agent.history` 是发给模型的消息（含 `tool_calls`、`content=null` 的工具轮、被 `final_answer` 直接 return 的答复），人看不懂；
+  所以另存一份 `chat_logs` 专门给人看。两者分离落盘到 `sessions.json`（原子替换写入），重启后既能看到历史，也能**接着聊**。
+- **只改展示层，不动 Agent 核心**：后端把 `final_answer` 的结构化 JSON 清洗成干净文本再下发（`clean_final_answer`），
+  但 `Orchestrator` 仍拿到完整 JSON 做评审——展示与协议解耦，改界面不会破坏多 Agent。
+
+> 轨迹抽屉（「轨迹」按钮）读的是该会话 Agent 实例的**内存 trace**（第7课的观测数据）：每步的
+> 提示词注入 / 模型思考 / 调用工具 / 工具结果 / 最终答复各自独立成块。默认全部折叠，点开看内容。
+
 ## 动手练习（按难度递进）
 
 1. **加一个新工具**：给它加 `@tool("search_weather", ...)`，然后让它回答“今天北京天气怎样？”（先用 mock 调起来，再换真模型）。
@@ -255,7 +291,7 @@ python examples/mcp_demo.py --provider openai-compatible
 | 评测 | `eval_harness.py`（4 任务 × 5 维度，退出码可进 CI） | `eval_harness.py --provider mock` |
 | 安全与沙箱 | 执行层白名单 + 路径沙箱 + 命令白名单 | `lesson7a_hole.py` |
 | 整合 | `codeops.py`（Bottle Code 合成层） | `codeops_demo.py` |
-| 网页版 | 流式输出 + FastAPI + SSE + Vue | `web/server.py` / `start.bat` |
+| 网页版 | 流式输出 + FastAPI + SSE + Vue，痕迹可观测、会话落盘 | `web/server.py` / `start.bat` |
 | 生产级 RAG | 混合检索（BM25 + 向量 RRF） | `knowledge_embed.py` / `rag_eval.py` |
 | 代码编码闭环 | `run_python` 沙箱 + 隐藏测试评测器 | `lesson11_demo.py` / `lesson11_eval.py` |
 
