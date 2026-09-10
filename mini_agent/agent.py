@@ -6,6 +6,7 @@ from typing import Generator, Literal, overload
 from . import tools
 from .llm import LLM
 from .audit import AuditLogger
+from .approval import Approver, AllowAllApprover
 
 # 连续空响应上限：模型连返 N 次"无文本无工具"就中止任务，而不是静默重试直到 max_steps 耗尽
 # （同上下文静默重试对确定性模型等于"原样复现"，上一轮空下一轮还空，会空转烧光步数）
@@ -73,6 +74,35 @@ def _render_messages(msgs: list[dict], per_line: int = 140, cap: int = 2000) -> 
     return text
 
 
+def _result_ok(result: str) -> bool:
+    """工具结果是否成功（不是 {"error": ...}）。
+
+    read_file 成功时返回的是裸文本（不是 JSON），解析失败即视为成功——
+    只有能解析成 dict 且带 "error" 键的才算失败。
+    """
+    s = result.lstrip()
+    if not s.startswith("{"):
+        return True
+    try:
+        return "error" not in json.loads(s)
+    except (json.JSONDecodeError, TypeError):
+        return True
+
+
+# 工具前置条件表：两道裁决都通过后、执行之前检查。
+# 签名 (agent, args_dict) -> None；抛 ValueError 表示不满足（消息进 [PRECONDITION]）。
+# 放在这里而不是工具函数里，是因为它依赖 Agent 的会话状态（见过哪些文件），
+# 而工具函数是无状态、按名字调用的纯函数——和权限裁决同层，概念一致：
+# 「这个调用允不允许」是 Agent 的判断，不是工具的判断。
+def _require_read(agent: "Agent", args: dict) -> None:
+    target = tools._safe_path(args["path"])
+    if target not in agent._read_files:
+        raise ValueError(f"修改前必须先 read_file 读取: {args.get('path')}")
+
+
+_TOOL_PRECONDITIONS = {"edit_file": _require_read}
+
+
 class Agent:
     """核心：把“大模型 + 工具 + 循环 + 记忆”串起来的主循环。"""
 
@@ -80,13 +110,23 @@ class Agent:
                  system_prompt: str = DEFAULT_SYSTEM_PROMPT,
                  allowed_tools: set[str] | None = None,
                  audit: AuditLogger | None = None, max_trace_chars: int = 300,
-                 max_tool_result_chars: int = 2000):
+                 max_tool_result_chars: int = 2000,
+                 approver: Approver | None = None):
         self.llm = llm
         self.max_steps = max_steps
         self.max_context_messages = max_context_messages   # 短期上下文"滑动窗口"大小
         self.system_prompt = system_prompt
-        # 工具白名单：None = 允许所有工具；传一个集合则只允许这些（权限最小化的雏形）
+        # 职责边界：None = 所有工具都在职责内；传一个集合则只允许这些。
+        # 注意它只是"第一道裁决"——read 类工具会豁免（见 _adjudicate），
+        # 不在集合里的 write/execute 才真的被拦。
         self.allowed_tools = None if allowed_tools is None else set(allowed_tools)
+        # 审批者：write/execute 类操作放行与否由它裁决。不传 = AllowAll（与历史行为一致），
+        # 但会记一条 auto-allowed 轨迹——让「默认放行」是个有记录的决定，而不是静默放行。
+        self.approver = approver if approver is not None else AllowAllApprover()
+        self._approver_explicit = approver is not None
+        # 已「见过内容」的文件：read_file 读过、write_file 亲手写过。
+        # edit_file 要求先见过内容才允许改（工具协议层面的「先观测再动手」）。
+        self._read_files: set[str] = set()
         self.history: list[dict] = []   # 完整对话历史（内部保留，发送给模型时用窗口裁剪）
         self.audit = audit             # 可选审计器：挂了它，事件同时落盘 logs/agent.jsonl
         self.max_trace_chars = max_trace_chars  # 轨迹里结果截断上限（防膨胀 + 减敏感面）
@@ -129,6 +169,45 @@ class Agent:
                 self._warned_trim = True
         return msgs + recent
 
+    def _adjudicate(self, name: str, raw_args: str, risk: str, step: int) -> str | None:
+        """执行层裁决：返回 None = 放行；返回字符串 = 拒绝原因（已经是给人看的消息）。
+
+        两道裁决的顺序不能反——先判「这活是不是我的」，再判「危不危险」。
+        反过来的话，模型幻觉调用一个职责外的工具时会直接被送进审批
+        （无人环境下默认放行），7A 挖的那个洞就回来了。
+        """
+        # ① 职责边界：allowed_tools 是硬边界。但 read 类工具豁免——读从不越权，
+        #    而规则 10 要求「写入后自验证」，把 read_file 关掉会让模型没法自证。
+        if (self.allowed_tools is not None
+                and name not in self.allowed_tools
+                and risk != tools.RISK_READ):
+            return f"[SECURITY] 越权调用已拦截: {name}。允许的工具: {sorted(self.allowed_tools)}"
+
+        # ② 风险分级：写/跑要过审批
+        if risk in (tools.RISK_WRITE, tools.RISK_EXECUTE):
+            approved = self.approver(name, raw_args, risk)
+            label = getattr(self.approver, "label", type(self.approver).__name__)
+            if approved:
+                note = "批准" if self._approver_explicit else "auto-allowed（未配置审批者）"
+            else:
+                note = "拒绝"
+            self._record_trace({
+                "step": step + 1, "role": "approval", "name": name,
+                "args": {"risk": risk, "approver": label}, "result": note,
+            })
+            if not approved:
+                return f"[APPROVAL] 操作未获批准: {name}（risk={risk}）"
+
+        # ③ 工具前置条件（如 edit_file 必须先 read_file）
+        pre = _TOOL_PRECONDITIONS.get(name)
+        if pre is not None:
+            try:
+                pre(self, json.loads(raw_args) if (raw_args or "").strip() else {})
+            except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+                return f"[PRECONDITION] {exc}"
+
+        return None
+
     def _run_tool_calls(self, tool_calls, step: int = 0, stream: bool = False) -> list[str]:
         """执行一批工具调用，返回每个调用的结果（流式模式下由 _run 广播成 result 事件）。
 
@@ -142,14 +221,23 @@ class Agent:
             if self.verbose and not stream:
                 print(f"  [tool] {name}({raw_args})")
             t0 = time.time()   # 计时从"处理这个调用"开始：越权拒绝(不执行)也记一个近 0 的耗时
-            # —— 权限检查：执行之前，先问一句"这个工具我有权调吗" ——
-            if self.allowed_tools is not None and name not in self.allowed_tools:
-                # 不执行！[SECURITY] 稳定标记供审计过滤；带上允许列表，让模型下一轮能自纠
-                result = json.dumps({
-                    "error": f"[SECURITY] 越权调用已拦截: {name}。允许的工具: {sorted(self.allowed_tools)}",
-                }, ensure_ascii=False)
+            # —— 执行层裁决：职责边界 → 风险分级 → 前置条件（顺序见 _adjudicate）——
+            risk = tools.get_risk(name)
+            denial = self._adjudicate(name, raw_args, risk, step)
+            if denial is not None:
+                # 不执行！[SECURITY]/[APPROVAL]/[PRECONDITION] 稳定标记供审计与评测过滤
+                result = json.dumps({"error": denial}, ensure_ascii=False)
             else:
                 result = tools.execute_tool(name, raw_args)
+            # 登记"已见过内容"：读过或亲手写过的文件，之后才允许 edit_file 修改。
+            # write_file 也算——模型刚写下的就是它自己给的字符串，再要求"先读一遍"只会白烧步数；
+            # 安全性由 edit_file 的逐字符匹配保证（记错了照样"未找到"）。
+            if name in ("read_file", "write_file") and _result_ok(result):
+                try:
+                    _args = json.loads(raw_args) if (raw_args or "").strip() else {}
+                    self._read_files.add(tools._safe_path(_args["path"]))
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                    pass   # 拿不到 path 就不登记，不影响主流程
             results.append(result)
             elapsed = round(time.time() - t0, 3)
             if self.verbose and not stream:
