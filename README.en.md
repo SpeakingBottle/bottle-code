@@ -55,7 +55,8 @@ agent-learn/
 │   ├── __init__.py
 │   ├── agent.py      # Agent main loop (the heart of it all)
 │   ├── llm.py        # Model backend abstraction (real API / mock + streaming)
-│   ├── tools.py      # Tool registry + implementations (incl. the run_python sandbox)
+│   ├── tools.py      # Tool registry + implementations (each tool carries a risk level; incl. the run_python sandbox)
+│   ├── approval.py   # Approver abstraction (AllowAll / DenyAll / Terminal)
 │   ├── knowledge.py  # Minimal RAG (chunking + vectors + retrieval)
 │   ├── knowledge_embed.py  # Lesson 9 production RAG (embeddings + Chroma + hybrid retrieval)
 │   ├── roles.py      # Multi-agent division of labour (planner / executor / reviewer + orchestrator)
@@ -76,6 +77,7 @@ agent-learn/
 │   ├── mcp_demo.py         # Demo of wiring MCP tools into the Agent
 │   ├── eval_harness.py     # Evaluation set: score the Agent (4 tasks × 5 dimensions)
 │   ├── lesson7a_hole.py    # Lesson 7A vuln demo: an out-of-scope call gets blocked
+│   ├── tooling_permissions_demo.py # Tooling + risk-tiered permissions acceptance (15 checks, CI-ready)
 │   ├── rag_eval.py         # Lesson 9 retrieval evaluation (hit@k across three approaches)
 │   ├── codeops_demo.py     # ★ Bottle Code demo (MCP + RAG + multi-agent + file writes)
 │   ├── lesson11_demo.py    # Lesson 11 coding-loop demo (write code → run tests → fix)
@@ -141,14 +143,59 @@ cd web && npm install && npm run dev                                  # frontend
 
 ### 1. `tools.py` — giving the Agent hands and feet
 
-A tool is: **a function + a name + a description + a JSON Schema for its arguments**. The description matters most,
-because the model decides whether to call it by **reading the description**, not the source code.
+A tool is: **a function + a name + a description + a JSON Schema for its arguments + a risk level**. The description matters
+most, because the model decides whether to call it by **reading the description**, not the source code.
 
 The `@tool(...)` decorator registers a function into a global table; `get_tool_schemas()` translates that whole table into
 `function calling` declarations the model understands; `execute_tool(name, args)` dispatches by name and runs it.
 
+| Risk level | Tools | Execution layer |
+|---|---|---|
+| `read` | `list_dir` `read_file` `grep` `calculator` `get_current_time` `recall` `kb_search` `final_answer` | allowed straight through |
+| `write` | `write_file` `edit_file` `remember` | requires approval |
+| `execute` | `run_shell` `run_python` | requires approval |
+
+A new tool that doesn't declare `risk` defaults to `write` — a **safe default: forget to declare it and it lands in the
+approval path, rather than being auto-allowed**.
+
+Two tools deserve their own note:
+
+- **`grep`** fills the content-search gap. Without it, finding one piece of code meant `list_dir` then `read_file` on
+  every file — O(all files) of cost for an O(1) question.
+- **`read_file` / `edit_file` working together**: `read_file(path, offset, limit)` returns line-numbered content whose
+  **first line states "N lines total, showing a-b"** (fixing the old silent truncation at 20,000 characters, which never
+  told the model it hadn't seen everything); `edit_file` does exact string replacement, where **`old_string` must be
+  unique** and **you must `read_file` first**.
+
+> These three share one idea: **anything a tool contract can guarantee should not be left to the model's good
+> behaviour via prompt wording.** "Observe before you act" used to live in the rules; now the tool contracts enforce it.
+
+#### Permissions: responsibility boundary + risk tiers
+
+The execution layer runs **two adjudications in order** (the order matters):
+
+1. **Responsibility boundary** — `allowed_tools` is a hard boundary: `write`/`execute` tools outside a role's tool set
+   are always blocked. But **`read`-tier tools are exempt** — reading is never an overreach, and the rules require
+   verifying after a write, which needs `read_file`.
+2. **Risk tiering** — a `write`/`execute` call that clears the boundary still has to ask an `Approver`:
+
+| Approver | Used for |
+|---|---|
+| `AllowAllApprover` | The default (headless / evals / CI). **Still records an `auto-allowed` trace entry** |
+| `DenyAllApprover` | Strict mode, for proving "dangerous operations really are blocked" |
+| `TerminalApprover` | CLI `--approve`: interactive y/n/a; **fails closed (denies) when stdin is unavailable** |
+
+> Why the order matters: first "is this job mine?", then "is it dangerous?". Reversed, a hallucinated call to a tool
+> outside the role goes straight into approval (which auto-allows headless) — and the hole from lesson 7A reopens.
+>
+> Why auto-allowed is still traced: it makes "nobody was available to ask, so it went through automatically" an
+> **auditable decision** rather than a silent one.
+>
+> The web version has no synchronous interaction channel (SSE is a one-way stream; the Agent loop can't suspend and wait
+> for a reply), so it only takes a `--approval-policy allow|deny` strategy instead of per-call approval.
+
 > Exercise: add your own `@tool("search_weather", ...)`. You'll immediately feel that adding an ability to an Agent =
-> adding a function + writing a clear description.
+> adding a function + a clear description + thinking about how dangerous it is.
 
 ### 2. `llm.py` — the model backend
 
@@ -201,7 +248,7 @@ user task
 structured result
 ```
 
-- **The essence of the split**: different `system_prompt` (persona + rules) and different `allowed_tools` (allowlist) per role.
+- **The essence of the split**: different `system_prompt` (persona + rules) and different `allowed_tools` (responsibility boundary — "is this job mine?") per role.
 - **Message protocol**: roles exchange JSON carrying `task / steps / result / verdict / feedback`, not loose prose.
 - **Reusing the Lesson 2 loop**: planner, executor and reviewer are all the same `Agent` class — only the persona and tools differ.
 
@@ -241,12 +288,12 @@ user task ("count lines of code" / "look up deploy steps" / "write a checklist")
 │  │ Orchestrator (multi-agent split)          │  │
 │  │  Planner → Executor → Reviewer → ok/retry │  │
 │  └───────────────────────────────────────────┘  │
-│  Reliability layer: allowed_tools allowlist + audit │
+│  Reliability: responsibility boundary + risk-tiered approval + audit │
 └─────────────────────────────────────────────────┘
    ↓ tool layer
 ┌──────────┬──────────┬──────────┬──────────────┐
 │ read repo│ query KB │ execute  │ MCP abilities │
-│ list_dir │ kb_search│ write_file│ mcp_count_loc│
+│ grep     │ kb_search│ edit_file│ mcp_count_loc│
 │ read_file│ (RAG)    │ run_shell│ mcp_git_status│
 │ run_shell│          │ calculator│ mcp_list_files│
 └──────────┴──────────┴──────────┴──────────────┘
@@ -306,7 +353,7 @@ Three design points:
 | Multi-agent collaboration | `roles.py` (planner / executor / reviewer) | `multi_agent_demo.py` |
 | Observability | `audit.py` (trace + append-only JSONL) | run any demo, then read `logs/agent.jsonl` |
 | Evaluation | `eval_harness.py` (4 tasks × 5 dimensions, exit code CI-ready) | `eval_harness.py --provider mock` |
-| Safety & sandboxing | execution-layer allowlist + path sandbox + command allowlist | `lesson7a_hole.py` |
+| Safety & sandboxing | responsibility boundary + risk-tiered approval + path sandbox + AST-allowlist calculator | `lesson7a_hole.py` / `tooling_permissions_demo.py` |
 | Composition | `codeops.py` (the Bottle Code layer) | `codeops_demo.py` |
 | Web app | streaming + FastAPI + SSE + Vue, observable traces, sessions on disk | `web/server.py` / `start.bat` |
 | Production RAG | hybrid retrieval (BM25 + vector RRF) | `knowledge_embed.py` / `rag_eval.py` |
@@ -325,12 +372,21 @@ Three design points:
 - **More MCP servers**: mount databases, browsers, CI — then Bottle Code can genuinely do ops.
 - **Production hardening**: `sessions.json` → SQLite/Redis, on-demand Element Plus imports, auth, HTTPS (currently a teaching demo; these gaps are known and deliberate).
 - **A stricter command sandbox**: `run_shell` still permits `cat` on arbitrary files and git repo operations; this could go deeper into a true command-level allowlist.
+- **Sensitive-path deny list**: now that `read`-tier tools are exempt from the responsibility boundary, an Agent in any role can read files under `BASE_DIR` (**including `.env`**). A deny rule is needed to keep `.env` / `.git/` / `*.key` out of read operations.
+- **Async approval for the web app**: today it only takes `--approval-policy allow|deny`. Real per-call approval needs an `approval_request` SSE event + a `POST /api/approve` endpoint + an Agent loop that can suspend and wait — the hard part is the channel, not the decision.
 
 ## Security notes (important)
 
-- `calculator` uses `eval` purely as a teaching demo. In production, replace it with an AST allowlist parser or a dedicated calculation service.
+- `calculator` evaluates through an **AST allowlist, not `eval`**. The old version was `eval(expr, {"__builtins__": {}}, safe_dict)`,
+  and emptying `__builtins__` does not block attribute traversal from a literal — `().__class__.__bases__[0].__subclasses__()`
+  reaches `os.system`, which we verified executes arbitrary commands. Under the AST allowlist, attribute access, subscripts,
+  lambdas, comprehensions and imports are simply not expressible.
 - `write_file` / `read_file` enforce path limits (`_safe_path`), but that isn't enough. A real Agent needs **least privilege, human
-  confirmation, sandboxed execution, and an audit log**.
+  confirmation, sandboxed execution, and an audit log** — this project has a minimal version of each (responsibility boundary +
+  risk-tiered approval + the `run_python` sandbox + an audit log), but all of them are still **teaching-grade**.
+- **Known residual exposure**: `read`-tier tools are exempt from the responsibility boundary, which means an Agent in *any* role
+  can read files under `BASE_DIR` (the repo root by default) — **including `.env`**. The old model's `allowed_tools` blocked that
+  too. Deploying somewhere with real secrets should add a sensitive-path deny list (`.env`, `.git/`, …); this is a known TODO.
 
 ## Wrap-up
 

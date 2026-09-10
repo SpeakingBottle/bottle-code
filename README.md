@@ -54,7 +54,8 @@ agent-learn/
 │   ├── __init__.py
 │   ├── agent.py      # Agent 主循环（最核心）
 │   ├── llm.py        # 模型后端抽象（真实 API / mock + 流式）
-│   ├── tools.py      # 工具注册表 + 各工具实现（含 run_python 沙箱）
+│   ├── tools.py      # 工具注册表 + 各工具实现（每个工具带 risk 等级，含 run_python 沙箱）
+│   ├── approval.py   # 审批者抽象（AllowAll / DenyAll / Terminal）
 │   ├── knowledge.py  # 最小版 RAG（切块 + 向量 + 检索）
 │   ├── knowledge_embed.py  # 第9课 生产级 RAG（embedding + Chroma + 混合检索）
 │   ├── roles.py      # 多 Agent 分工（规划者/执行者/评审者 + 编排器）
@@ -75,6 +76,7 @@ agent-learn/
 │   ├── mcp_demo.py         # 把 MCP 工具接进 Agent 的演示
 │   ├── eval_harness.py     # 评测集：给 Agent 打分（4 任务 × 5 维度）
 │   ├── lesson7a_hole.py    # 7A 漏洞演示：越权调用被拦截
+│   ├── tooling_permissions_demo.py  # 工具层 + 风险分级权限验收（15 项边界，可进 CI）
 │   ├── rag_eval.py         # 第9课 检索评估（hit@k 对比三方案）
 │   ├── codeops_demo.py     # ★ Bottle Code 演示（MCP + RAG + 多Agent + 写文件）
 │   ├── lesson11_demo.py    # 第11课 编码闭环演示（写代码→跑测试→改）
@@ -140,11 +142,46 @@ cd web && npm install && npm run dev                                  # 前端�
 
 ### 1. `tools.py` —— 给 Agent 安装“手脚”
 
-一个工具就是：**函数 + 名字 + 描述 + 参数 JSON Schema**。其中“描述”尤其重要，因为模型是**读描述**而不是读源码来决定要不要调用它的。
+一个工具就是：**函数 + 名字 + 描述 + 参数 JSON Schema + 风险等级**。其中“描述”尤其重要，因为模型是**读描述**而不是读源码来决定要不要调用它的。
 
 `@tool(...)` 装饰器把函数注册进全局表，`get_tool_schemas()` 把整张表翻译成大模型能看懂的 `function calling` 声明。`execute_tool(name, args)` 负责按名字分发并执行。
 
-> 小练习：自己加一个 `@tool("search_weather", ...)` 吧。你会立刻体会到：给 Agent 加能力 = 加一个函数 + 写清楚描述。
+| 风险等级 | 工具 | 执行层行为 |
+|---|---|---|
+| `read` | `list_dir` `read_file` `grep` `calculator` `get_current_time` `recall` `kb_search` `final_answer` | 直接放行 |
+| `write` | `write_file` `edit_file` `remember` | 需审批 |
+| `execute` | `run_shell` `run_python` | 需审批 |
+
+新工具不声明 `risk` 时默认 `write`——**安全默认：漏写就进审批，而不是自动放行**。
+
+两个工具值得单独说：
+
+- **`grep`** 补上了内容检索。没有它，想找一处代码只能 `list_dir` 再逐个 `read_file`，成本是 O(所有文件) 而问题本身是 O(1)。
+- **`read_file` / `edit_file` 的配合**：`read_file(path, offset, limit)` 返回带行号的内容，**首行告知"共 N 行，显示 a-b 行"**（治掉旧版砍到 20000 字符却不说明的静默截断）；`edit_file` 做精确字符串替换，且 **`old_string` 必须唯一**、**改之前必须先 `read_file`**。
+
+> 这三件事是同一个设计思想：**能让工具协议保证的事，不要用提示词去求模型自觉。** 「先观测再动手」以前写在规则里靠模型自觉，现在由工具契约强制。
+
+#### 权限：职责边界 + 风险分级
+
+执行层按**顺序**做两道裁决（顺序不能反）：
+
+1. **职责边界**——`allowed_tools` 是硬边界：不在职责工具集里的 `write`/`execute` 一律拦。
+   但 **`read` 类工具豁免**——读从不越权，而规则要求「写入后自验证」，把 `read_file` 关掉会让模型没法自证。
+2. **风险分级**——过了边界的 `write`/`execute` 还要问 `Approver`：
+
+| Approver | 用在哪 |
+|---|---|
+| `AllowAllApprover` | 默认（无人环境 / 评测 / CI）。**仍会记一条 `auto-allowed` 轨迹** |
+| `DenyAllApprover` | 严格模式，用来验证"危险操作真的被拦住了" |
+| `TerminalApprover` | CLI `--approve`：逐次 y/n/a 交互；**读不到输入时 fail-closed 拒绝** |
+
+> 为什么顺序不能反：先判「这活是不是我的」，再判「危不危险」。反过来，模型幻觉调用一个职责外的工具时会直接被送进审批（无人环境下默认放行），7A 挖的那个洞就回来了。
+>
+> 为什么默认放行要记轨迹：让「没人可问所以自动放行」是一个**有记录、可审计的决定**，而不是静默放行。
+>
+> 网页版没有同步交互通道（SSE 是单向流，Agent 循环没法"挂起等人回话"），所以只用 `--approval-policy allow|deny` 定策略，不做逐次审批。
+
+> 小练习：自己加一个 `@tool("search_weather", ...)` 吧。你会立刻体会到：给 Agent 加能力 = 加一个函数 + 写清楚描述 + 想清楚它有多危险。
 
 ### 2. `llm.py` —— 模型后端
 
@@ -190,7 +227,7 @@ cd web && npm install && npm run dev                                  # 前端�
 结构化结果
 ```
 
-- **分工本质**：给不同角色不同的 `system_prompt`（人设 + 规则）和不同的 `allowed_tools`（白名单）。
+- **分工本质**：给不同角色不同的 `system_prompt`（人设 + 规则）和不同的 `allowed_tools`（职责边界，决定"这活是不是我的"）。
 - **消息协议**：角色之间用 JSON 传递 `task / steps / result / verdict / feedback`，而不是散乱的文字。
 - **复用第2课循环**：规划者/执行者/评审者都是同一个 `Agent` 类，只是人设和工具不同。
 
@@ -229,14 +266,14 @@ python examples/mcp_demo.py --provider openai-compatible
 │  │ Orchestrator（多Agent分工）                │  │
 │  │  规划者 → 执行者 → 评审者 → ok/retry        │  │
 │  └───────────────────────────────────────────┘  │
-│  可靠性层：allowed_tools 白名单 + audit 审计     │
+│  可靠性层：职责边界 + 风险分级审批 + audit 审计   │
 └─────────────────────────────────────────────────┘
    ↓ 工具层
 ┌──────────┬──────────┬──────────┬──────────────┐
 │ 读代码库   │ 查知识库   │ 自动执行   │ MCP 外部能力  │
-│ list_dir  │ kb_search │ write_file│ mcp_count_loc│
-│ read_file │ (RAG)     │ run_shell │ mcp_git_status│
-│ run_shell │           │ calculator│ mcp_list_files│
+│ grep      │ kb_search │ edit_file│ mcp_count_loc│
+│ read_file │ (RAG)     │ run_shell│ mcp_git_status│
+│ list_dir  │           │ run_python│ mcp_list_files│
 └──────────┴──────────┴──────────┴──────────────┘
 ```
 
@@ -289,7 +326,7 @@ SSE 事件流：delta（文本增量）/ tool（调用工具）/ result（工具
 | 多 Agent 协作 | `roles.py`（规划者/执行者/评审者） | `multi_agent_demo.py` |
 | 可观测性 | `audit.py`（trace + append-only JSONL） | 跑任意 demo 后看 `logs/agent.jsonl` |
 | 评测 | `eval_harness.py`（4 任务 × 5 维度，退出码可进 CI） | `eval_harness.py --provider mock` |
-| 安全与沙箱 | 执行层白名单 + 路径沙箱 + 命令白名单 | `lesson7a_hole.py` |
+| 安全与沙箱 | 职责边界 + 风险分级审批 + 路径沙箱 + AST 白名单计算 | `lesson7a_hole.py` / `tooling_permissions_demo.py` |
 | 整合 | `codeops.py`（Bottle Code 合成层） | `codeops_demo.py` |
 | 网页版 | 流式输出 + FastAPI + SSE + Vue，痕迹可观测、会话落盘 | `web/server.py` / `start.bat` |
 | 生产级 RAG | 混合检索（BM25 + 向量 RRF） | `knowledge_embed.py` / `rag_eval.py` |
@@ -306,11 +343,14 @@ SSE 事件流：delta（文本增量）/ tool（调用工具）/ result（工具
 - **更多 MCP server**：挂上数据库、浏览器、CI 等外部能力，Bottle Code 就能真正"运维"。
 - **生产化改造**：`sessions.json` → SQLite/Redis、Element Plus 按需引入、鉴权、HTTPS（当前为教学演示，已知在此留白）。
 - **更硬的命令级沙箱**：`run_shell` 目前对 `cat` 读任意文件 / git 仓库操作仍开放，可深化到真正的命令级白名单。
+- **敏感路径拒绝**：`read` 类工具豁免职责边界之后，任何角色的 Agent 都能读 `BASE_DIR` 内的文件（**含 `.env`**）。需要一条 deny 规则把 `.env` / `.git/` / `*.key` 这类敏感路径挡在读操作之外。
+- **web 端异步审批**：目前只给 `--approval-policy allow|deny`。真正的逐次审批要新增 `approval_request` SSE 事件 + `POST /api/approve` 端点 + 让 Agent 循环"挂起等回话"（生成器要可暂停）——难在通道，不在判断。
 
 ## 安全提示（重要）
 
-- 项目里的 `calculator` 用 `eval` 只是教学演示，生产环境请换成 AST 白名单解析或专用计算服务。
-- `write_file` / `read_file` 做了路径限制（`_safe_path`），但这还不够。真正的 Agent 一定要有**权限最小化、人工确认、沙箱执行、审计日志**。
+- `calculator` 用 **AST 白名单**求值，**不用 `eval`**。旧版是 `eval(expr, {"__builtins__": {}}, safe_dict)`，而清空 `__builtins__` 挡不住从字面量做属性遍历——`().__class__.__bases__[0].__subclasses__()` 能摸到 `os.system`，实测可直接执行任意命令。AST 白名单下属性访问、下标、lambda、推导式、import 全部不可表达。
+- `write_file` / `read_file` 做了路径限制（`_safe_path`），但这还不够。真正的 Agent 一定要有**权限最小化、人工确认、沙箱执行、审计日志**——这四样本项目各有一份最小实现（职责边界 + 风险分级审批 + `run_python` 沙箱 + 审计日志），但都还是**教学级**。
+- **已知残余暴露面**：`read` 类工具豁免职责边界，意味着任何角色的 Agent 都能读 `BASE_DIR`（默认仓库根）内的文件，**包括 `.env`**。旧模型下 `allowed_tools` 能把这类读取一起挡住。部署到含密钥的环境时应另加敏感路径拒绝（`.env` / `.git/` 等）——这是已知待办。
 
 ## 小结
 

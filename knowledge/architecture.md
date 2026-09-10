@@ -2,12 +2,33 @@
 
 ## 模块职责
 
-- `agent.py`：Agent 主循环，负责"模型→工具→观察→再想"的循环，支持工具白名单与审计轨迹。
-- `tools.py`：工具注册表，所有工具（计算/读写文件/跑命令/检索）都通过 @tool 装饰器注册。
+- `agent.py`：Agent 主循环，负责"模型→工具→观察→再想"的循环，含执行层裁决（职责边界 + 风险分级 + 工具前置条件）与审计轨迹。
+- `tools.py`：工具注册表，所有工具（计算/读写文件/搜索/跑命令/检索）都通过 @tool 装饰器注册，每个工具带 `risk` 等级。
+- `approval.py`：审批者抽象。`Approver` 协议 + 三个实现（`AllowAll` / `DenyAll` / `Terminal`），把"危险操作放不放行"从 Agent 核心里外置成可注入回调。
 - `llm.py`：模型后端抽象，统一 OpenAI 兼容与 Anthropic Messages API 两种格式。
 - `roles.py`：多 Agent 分工，规划者/执行者/评审者三个角色协作，用 JSON 消息传递结果。
 - `mcp_client.py`：MCP 客户端适配器，把外部 MCP 工具翻译成本项目 Agent 认识的 Tool。
 - `codeops.py`：Bottle Code 合成层，把 Orchestrator + MCP + 审计接线成一个入口。
+
+## 执行层裁决（三道，按序）
+
+工具调用在真正执行前要过三关，顺序不能变：
+
+1. **职责边界**——`allowed_tools` 是硬边界：不在职责工具集里的 `write`/`execute` 一律拦，返回
+   `[SECURITY]`。**`read` 类工具豁免**（读从不越权，而"写入后自验证"需要它）。
+2. **风险分级**——过了边界的 `write`/`execute` 还要问 `Approver`；拒绝则返回 `[APPROVAL]`。
+   未配置审批者时用 `AllowAllApprover`，但会记一条 `role=approval` 轨迹写明是自动放行。
+3. **工具前置条件**——`_TOOL_PRECONDITIONS` 表驱动，如 `edit_file` 要求该文件先被
+   `read_file` 读过或 `write_file` 写过（Agent 维护 `_read_files`）；不满足返回 `[PRECONDITION]`。
+
+**为什么顺序不能反**：先判「这活是不是我的」，再判「危不危险」。反过来，模型幻觉调用一个
+职责外的工具时会直接被送进审批（无人环境下默认放行），7A 挖的那个洞就回来了。
+
+**为什么前置条件放在 Agent 层而不是工具函数里**：它依赖 Agent 的会话状态（见过哪些文件），
+而工具函数是无状态、按名字调用的纯函数。「这个调用允不允许」是 Agent 的判断，不是工具的判断。
+
+`allowed_tools` 的**提示层**作用同时保留：`_run` 里仍按其过滤工具 schema，模型看不到职责外的工具。
+即"提示层软约束 + 执行层硬裁决"两层纵深。
 
 ## MCP 接入方式
 
