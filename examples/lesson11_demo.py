@@ -72,7 +72,8 @@ def render_trace(trace: list[dict]) -> str:
     没有独立的 role=result 事件——所以 display 把 name(args) 和 → result 并在一行。最终答复
     用 ✅，超时用 ⏰。thinking/prompt 这类过程行省略（太长，只留结果型事件）。
     """
-    icons = {"final_answer": "✅", "tool": "🔧", "timeout": "⏰", "assistant": "💬", "empty": "⚠️"}
+    icons = {"final_answer": "✅", "tool": "🔧", "timeout": "⏰", "assistant": "💬",
+             "empty": "⚠️", "approval": "🔐"}
     lines = []
     for ev in trace:
         role = ev.get("role")
@@ -80,6 +81,11 @@ def render_trace(trace: list[dict]) -> str:
             continue
         if role == "tool":
             text = f"{ev.get('name')}({str(ev.get('args'))[:60]}) → {str(ev.get('result'))[:140]}"
+        elif role == "approval":
+            # 审批裁决（第7课权限模型的第二道）。默认放行也会出现（auto-allowed）——
+            # 这是刻意的：让"没人可问所以自动放行"这件事在轨迹里看得见。
+            text = (f"{ev.get('name')} risk={ev.get('args', {}).get('risk')} "
+                    f"→ {ev.get('result')}")
         elif role in ("timeout", "assistant"):
             text = str(ev.get("result", ""))[:140]
         else:  # final_answer
