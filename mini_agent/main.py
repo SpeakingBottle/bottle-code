@@ -45,11 +45,11 @@ def build_agent(provider, model, base_url, approver=None):
         return Agent(MockLLM(), approver=approver)
     if provider in ("openai", "openai-compatible"):
         if not os.environ.get("OPENAI_API_KEY"):
-            raise SystemExit("请在 .env 中设置 OPENAI_API_KEY（或通过 --api-key 传入）")
+            raise SystemExit("未找到 OPENAI_API_KEY。请在项目根目录的 .env 中设置（格式见 .env.example）")
         return Agent(OpenAIChatLLM(model=model, base_url=base_url), approver=approver)
     if provider == "anthropic":
         if not (os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")):
-            raise SystemExit("请在 .env 中设置 ANTHROPIC_AUTH_TOKEN（或通过 --api-key 传入）")
+            raise SystemExit("未找到 ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY。请在项目根目录的 .env 中设置（格式见 .env.example）")
         return Agent(AnthropicLLM(model=model, base_url=base_url), approver=approver)
     raise SystemExit(f"不支持的 provider: {provider}")
 
