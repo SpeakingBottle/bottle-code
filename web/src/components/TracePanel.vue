@@ -25,13 +25,29 @@ async function load() {
     const resp = await fetch(`/api/sessions/${props.sid}/trace`)
     if (!resp.ok) throw new Error('HTTP ' + resp.status)
     const data = await resp.json()
-    // 每条加上 open:false —— 轨迹默认折叠（②），点了才展开，扫起来更省力
-    trace.value = (data.trace || []).map((ev) => ({ ...ev, open: false }))
+    // 每条加上 open:false —— 轨迹默认折叠（②），点了才展开，扫起来更省力；
+    // tool 事件拆成「调用工具」+「工具结果」两个独立块（各自可折叠，与聊天时间线一致）
+    trace.value = displayItems(data.trace || [])
   } catch (e) {
     error.value = e.message
   } finally {
     loading.value = false
   }
+}
+
+// —— 轨迹里一个 tool 事件同时含 args 和 result，面板上拆成两个独立块：
+// 「调用工具」看参数、「工具结果」看结果——结果单独成块、有独立标签（用户要求）
+function displayItems(trace) {
+  const items = []
+  for (const ev of trace) {
+    if (ev.role === 'tool') {
+      items.push({ ...ev, displayRole: 'tool', open: false })
+      items.push({ ...ev, displayRole: 'tool_result', open: false })
+    } else {
+      items.push({ ...ev, displayRole: ev.role, open: false })
+    }
+  }
+  return items
 }
 
 // 打开时拉一次；每次打开都重新拉（轨迹随对话增长）
@@ -43,18 +59,19 @@ watch(() => props.sid, () => { if (props.modelValue) load() })
 // 新增两类（② 轨迹补全）：thinking=模型思考（Cpu，模型推理）/ prompt=
 // 提示词注入（Files，发给模型的消息快照）。assistant 从 Cpu 让给 thinking。
 function icon(role) {
-  return { tool: Tools, final_answer: CircleCheck, assistant: ChatDotRound,
+  return { tool: Tools, tool_result: Document, final_answer: CircleCheck, assistant: ChatDotRound,
            thinking: Cpu, prompt: Files, timeout: Warning }[role] || Cpu
 }
 function label(ev) {
-  switch (ev.role) {
+  switch (ev.displayRole) {
     case 'tool': return `调用工具：${ev.name}`
+    case 'tool_result': return '工具结果'
     case 'final_answer': return '最终答复'
     case 'assistant': return '答复'
     case 'thinking': return '模型思考'
     case 'prompt': return `提示词注入（${ev.args?.n_messages ?? 0} 条消息）`
     case 'timeout': return '达到最大步数，任务未完成'
-    default: return ev.role || '事件'
+    default: return ev.displayRole || '事件'
   }
 }
 function meta(ev) {
@@ -65,8 +82,9 @@ function meta(ev) {
   return parts.join(' · ')
 }
 function body(ev) {
-  if (ev.role === 'tool') return `${ev.args} → ${ev.result}`
-  if (ev.role === 'final_answer') {
+  if (ev.displayRole === 'tool') return ev.args
+  if (ev.displayRole === 'tool_result') return ev.result
+  if (ev.displayRole === 'final_answer') {
     if (ev.args && typeof ev.args === 'object' && ev.args.summary) return `summary: ${ev.args.summary}`
     return JSON.stringify(ev.args)
   }
@@ -90,12 +108,12 @@ function body(ev) {
       <div v-else-if="error" class="tp-state tp-error">加载失败：{{ error }}</div>
       <div v-else-if="trace.length === 0" class="tp-state">本会话还没有轨迹。</div>
       <div v-else class="tp-list">
-        <div v-for="(ev, i) in trace" :key="i" class="tp-item" :class="ev.role">
+        <div v-for="(ev, i) in trace" :key="i" class="tp-item" :class="ev.displayRole">
           <!-- ① 整条头部可点：展开/收起（默认收起），caret 指示状态（②） -->
           <button class="tp-head" @click="ev.open = !ev.open">
             <el-icon class="caret"><CaretRight v-if="!ev.open" /><CaretBottom v-else /></el-icon>
-            <el-icon class="tp-ic" :class="'ic-' + ev.role">
-              <component :is="icon(ev.role)" />
+            <el-icon class="tp-ic" :class="'ic-' + ev.displayRole">
+              <component :is="icon(ev.displayRole)" />
             </el-icon>
             <span class="tp-label">{{ label(ev) }}</span>
             <span v-if="meta(ev)" class="tp-meta mono">{{ meta(ev) }}</span>
@@ -123,6 +141,7 @@ function body(ev) {
   font-size: .8rem;
 }
 .tp-item.tool { border-left-color: var(--tool); }
+.tp-item.tool_result { border-left-color: var(--result); }
 .tp-item.assistant { border-left-color: var(--user); }
 .tp-item.final_answer { border-left-color: var(--result); }
 .tp-item.thinking { border-left-color: var(--think); }
@@ -147,6 +166,7 @@ function body(ev) {
 .caret { color: var(--text-dim); font-size: .8rem; flex: none; }
 .tp-ic { font-size: .95rem; flex: none; }
 .ic-tool { color: var(--tool); }
+.ic-tool_result { color: var(--result); }
 .ic-assistant { color: var(--user); }
 .ic-final_answer { color: var(--result); }
 .ic-thinking { color: var(--think); }
@@ -155,6 +175,7 @@ function body(ev) {
 /* 名称（标签）随图标一起着色；只有它带颜色，正文统一灰——突出最终答复（用户要求） */
 .tp-label { font-weight: 600; }
 .tp-item.tool .tp-label { color: var(--tool); }
+.tp-item.tool_result .tp-label { color: var(--result); }
 .tp-item.assistant .tp-label { color: var(--user); }
 .tp-item.final_answer .tp-label { color: var(--result); }
 .tp-item.thinking .tp-label { color: var(--think); }

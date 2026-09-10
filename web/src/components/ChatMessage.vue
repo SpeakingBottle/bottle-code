@@ -7,9 +7,20 @@
 // ③ 输出块图标：思考=CPU(模型推理) / 工具=Tools / 结果=Document，统一走 EP 官方图标库
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { CaretRight, CaretBottom, Cpu, Tools, Document } from '@element-plus/icons-vue'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
 const props = defineProps({
   message: { type: Object, required: true },
+})
+
+// 最终答复是 markdown（模型自然输出：标题/列表/代码块），用 marked 渲染 + DOMPurify 消毒（防 XSS）。
+// 只在 done 事件 content 一次性写入时渲染一次（App.vue 里 content 仅 done 时赋值），
+// 流式 pending 保持纯文本，不参与渲染——无逐字渲染的性能问题。
+const renderedContent = computed(() => {
+  const c = props.message.content
+  if (!c) return ''
+  return DOMPurify.sanitize(marked.parse(c))
 })
 
 // 工具结果超过这个长度就默认截断 + 「展开」
@@ -98,8 +109,11 @@ onUnmounted(() => { if (thinkTimer) clearInterval(thinkTimer) })
           {{ message.pending }}<span v-if="message.streaming" class="cursor">▍</span>
         </div>
 
-        <!-- 最终答复：done 事件一次性写入（后端已 clean 成干净文本） -->
-        <div class="text">{{ message.content }}<span v-if="message.streaming && message.content" class="cursor">▍</span></div>
+        <!-- 最终答复：done 事件一次性写入（后端已 clean 成干净文本）；markdown 渲染 + 消毒 -->
+        <div class="text">
+          <div v-if="renderedContent" class="md" v-html="renderedContent"></div>
+          <span v-if="message.streaming && message.content" class="cursor">▍</span>
+        </div>
       </template>
 
       <div v-else class="text">{{ message.content }}</div>
@@ -243,4 +257,61 @@ onUnmounted(() => { if (thinkTimer) clearInterval(thinkTimer) })
   animation: blink 1s steps(1) infinite;
 }
 @keyframes blink { 50% { opacity: 0; } }
+
+/* ---- markdown 渲染（最终答复）：深色终端风，与全局 token 一致 ---- */
+/* .text 的 pre-wrap 会破坏 HTML 布局，md 块内恢复 normal */
+.md { white-space: normal; word-break: break-word; line-height: 1.65; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md h1, .md h2, .md h3, .md h4 {
+  margin: 1.1em 0 .5em;
+  line-height: 1.3;
+  color: var(--text);
+}
+.md h1 { font-size: 1.25rem; border-bottom: 1px solid var(--border); padding-bottom: .3em; }
+.md h2 { font-size: 1.12rem; }
+.md h3 { font-size: 1.02rem; }
+.md h4 { font-size: .95rem; }
+.md p { margin: .5em 0; }
+.md ul, .md ol { margin: .5em 0; padding-left: 1.4em; }
+.md li { margin: .2em 0; }
+.md a { color: var(--user); text-decoration: none; }
+.md a:hover { text-decoration: underline; }
+.md strong { color: var(--text); }
+/* 行内代码：暗底小圆角 */
+.md :not(pre) > code {
+  background: rgba(15, 23, 32, .55);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: .08em .35em;
+  font-size: .85em;
+  font-family: Consolas, 'Courier New', monospace;
+}
+/* 代码块：暗底 + 边框 + 横向滚动 */
+.md pre {
+  background: rgba(15, 23, 32, .55);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: .6rem .8rem;
+  overflow-x: auto;
+  font-size: .8rem;
+  line-height: 1.5;
+}
+.md pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  font-family: Consolas, 'Courier New', monospace;
+}
+.md blockquote {
+  margin: .5em 0;
+  padding: .1em .9em;
+  border-left: 3px solid var(--border);
+  color: var(--text-dim);
+}
+.md hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
+.md table { border-collapse: collapse; margin: .6em 0; font-size: .88rem; }
+.md th, .md td { border: 1px solid var(--border); padding: .35em .6em; }
+.md th { background: rgba(15, 23, 32, .4); }
 </style>
