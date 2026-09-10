@@ -41,7 +41,7 @@ watch(() => props.sid, () => { if (props.modelValue) load() })
 
 // —— 图标 / 标签：与聊天时间线同一套 EP 图标语言（③）。
 // 新增两类（② 轨迹补全）：thinking=模型思考（Cpu，模型推理）/ prompt=
-// 提示词·上下文（Files，发给模型的消息快照）。assistant 从 Cpu 让给 thinking。
+// 提示词注入（Files，发给模型的消息快照）。assistant 从 Cpu 让给 thinking。
 function icon(role) {
   return { tool: Tools, final_answer: CircleCheck, assistant: ChatDotRound,
            thinking: Cpu, prompt: Files, timeout: Warning }[role] || Cpu
@@ -52,7 +52,7 @@ function label(ev) {
     case 'final_answer': return '最终答复'
     case 'assistant': return '答复'
     case 'thinking': return '模型思考'
-    case 'prompt': return `提示词 · 上下文（${ev.args?.n_messages ?? 0} 条消息）`
+    case 'prompt': return `提示词注入（${ev.args?.n_messages ?? 0} 条消息）`
     case 'timeout': return '达到最大步数，任务未完成'
     default: return ev.role || '事件'
   }

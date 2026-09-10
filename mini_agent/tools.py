@@ -247,10 +247,10 @@ def run_python(script: str, args: str = ""):
     }, ensure_ascii=False)
 
 
-@tool("final_answer", "任务完成时调用它给出最终答复；把结果填进这些结构化字段", {
+@tool("final_answer", "任务完成时调用它给出最终答复；把结果填进这些结构化字段。summary 必须包含任务的实际成果，禁止只写'已完成/已了解'这类空话", {
     "type": "object",
     "properties": {
-        "summary": {"type": "string", "description": "给用户的一句话总结"},
+        "summary": {"type": "string", "description": "给用户的最终答复：必须包含任务的实际成果（分析结论/关键发现/具体内容/数据），禁止只写'已完成/已了解/已分析'这类空话"},
         "plan": {"type": "array", "items": {"type": "string"}, "description": "执行前制定的计划步骤"},
         "steps": {"type": "array", "items": {"type": "string"}, "description": "执行步骤"},
         "used_tools": {"type": "array", "items": {"type": "string"}, "description": "用到的工具名"},

@@ -26,6 +26,7 @@ DEFAULT_SYSTEM_PROMPT = """你是一个小型自主智能体（Agent），你可
 10. 对写入/修改类操作，完成后用 read_file 或 run_shell 验证结果真的生效了，再调用 final_answer。
 11. 短期上下文（history）是滑动窗口，只保留最近若干轮；重要事实/用户偏好请用 remember 存入长期记忆，需要时用 recall 检索。
 12. 编码任务必须闭环：写完代码后用 run_python 运行测试脚本验证；失败/超时就根据报错修改实现再跑，直到通过为止——不要自认为写好了就交差，测试通过才算完成。
+13. final_answer 的 summary 必须包含任务的实际成果（分析结论/关键发现/具体内容/数据），禁止只写"已完成/已了解/已分析"这类空话；任务要求分析时，把分析结果写进 summary 或 result。
 
 工具选择表：
 get_current_time：获取当前日期和时间；
@@ -78,7 +79,8 @@ class Agent:
     def __init__(self, llm: LLM, max_steps: int = 24, max_context_messages: int = 20,
                  system_prompt: str = DEFAULT_SYSTEM_PROMPT,
                  allowed_tools: set[str] | None = None,
-                 audit: AuditLogger | None = None, max_trace_chars: int = 300):
+                 audit: AuditLogger | None = None, max_trace_chars: int = 300,
+                 max_tool_result_chars: int = 2000):
         self.llm = llm
         self.max_steps = max_steps
         self.max_context_messages = max_context_messages   # 短期上下文"滑动窗口"大小
@@ -88,6 +90,10 @@ class Agent:
         self.history: list[dict] = []   # 完整对话历史（内部保留，发送给模型时用窗口裁剪）
         self.audit = audit             # 可选审计器：挂了它，事件同时落盘 logs/agent.jsonl
         self.max_trace_chars = max_trace_chars  # 轨迹里结果截断上限（防膨胀 + 减敏感面）
+        # 工具结果单独给更宽的上限：read_file/run_shell 的结果动辄几千字，
+        # 300 字截断在轨迹面板里看不到内容（用户要求"记录工具结果"）。
+        # 2000 字能看到大部分结果又不至于撑爆轨迹/落盘文件。
+        self.max_tool_result_chars = max_tool_result_chars
         self.trace: list[dict] = []    # 内存轨迹：本次运行的完整时间线（调试/复盘用）
         self.verbose = True
         self._warned_trim = False
@@ -149,10 +155,11 @@ class Agent:
             if self.verbose and not stream:
                 print(f"  [result] {result[:200]}")
             self.history.append({"role": "tool", "tool_call_id": call["id"], "content": result})
-            # 记轨迹：结果截断到 max_trace_chars；args 保留原始 JSON 字符串（可重放）
+            # 记轨迹：结果截断到 max_tool_result_chars（工具结果给更宽上限，轨迹面板要能看到内容）；
+            # args 保留原始 JSON 字符串（可重放）
             self._record_trace({
                 "step": step + 1, "role": "tool", "name": name,
-                "args": raw_args, "result": result[:self.max_trace_chars],
+                "args": raw_args, "result": result[:self.max_tool_result_chars],
                 "elapsed": elapsed,
             })
         return results
