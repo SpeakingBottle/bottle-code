@@ -11,10 +11,13 @@ REM    start.bat mock           -> offline, no key needed
 REM    start.bat openai         -> OpenAI-compatible backend
 REM  Result: backend + frontend each open a window; frontend at http://localhost:5173
 REM
-REM  NOTE: keep this file ASCII-only. cmd.exe reads batch files with the
-REM  system OEM code page (936 on Chinese Windows); any non-ASCII bytes
-REM  (e.g. UTF-8 Chinese comments) get misparsed and can execute comment
-REM  lines as commands, creating garbage files. Chinese usage notes live
+REM  NOTE: keep this file ASCII-only AND CRLF line endings. cmd.exe reads
+REM  batch files with the system OEM code page (936 on Chinese Windows);
+REM  any non-ASCII bytes (e.g. UTF-8 Chinese comments) get misparsed and
+REM  can execute comment lines as commands, creating garbage files. LF-only
+REM  endings also break cmd's if (...) block parsing. And never put literal
+REM  parentheses inside a block's echo line - cmd treats the first ')' as
+REM  the block end and errors on whatever follows. Chinese usage notes live
 REM  in README.md instead.
 REM ============================================================
 
@@ -39,7 +42,7 @@ if errorlevel 1 (
 
 REM ---- Frontend deps: npm install if node_modules missing ----
 if not exist "web\node_modules" (
-  echo [start] Installing frontend dependencies (npm install)...
+  echo [start] Installing frontend dependencies: npm install...
   pushd web
   call npm install
   popd
