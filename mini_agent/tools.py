@@ -11,6 +11,12 @@ from . import knowledge
 
 _REGISTRY: dict[str, "Tool"] = {}
 
+# 工具的风险等级：执行层据此决定「放行」还是「问审批」。
+#   read    只读，无副作用 —— 执行层直接放行（读从不越权）
+#   write   改磁盘 —— 需要审批
+#   execute 跑进程 —— 需要审批
+RISK_READ, RISK_WRITE, RISK_EXECUTE = "read", "write", "execute"
+
 # 所有读写都限制在这个目录里，防止 Agent 越权访问系统文件。
 BASE_DIR = os.path.abspath(os.environ.get("AGENT_WORKDIR", os.getcwd()))
 MEMORY_FILE = os.path.join(BASE_DIR, "memory", "notebook.md")
@@ -26,13 +32,15 @@ ALLOWED_COMMANDS = {
 
 
 class Tool:
-    """一个工具 = 函数 + 名字 + 描述 + 参数 JSON Schema。"""
+    """一个工具 = 函数 + 名字 + 描述 + 参数 JSON Schema + 风险等级。"""
 
-    def __init__(self, name, func, description, parameters):
+    def __init__(self, name, func, description, parameters, risk=RISK_WRITE):
         self.name = name
         self.func = func
         self.description = description
         self.parameters = parameters
+        # 默认 write 是刻意的安全默认：新工具不声明风险就自动进审批，而不是自动放行。
+        self.risk = risk
         _REGISTRY[name] = self
 
     def schema(self):
@@ -61,10 +69,10 @@ class Tool:
         return json.dumps(result, ensure_ascii=False)
 
 
-def tool(name, description, parameters):
+def tool(name, description, parameters, risk=RISK_WRITE):
     """装饰器：@tool(...) 一键把普通函数注册成 Agent 可用的工具。"""
     def decorator(func):
-        Tool(name, func, description, parameters)
+        Tool(name, func, description, parameters, risk=risk)
         return func
     return decorator
 
@@ -76,7 +84,7 @@ def _safe_path(path):
     return raw
 
 
-@tool("get_current_time", "获取当前日期和时间", {"type": "object", "properties": {}})
+@tool("get_current_time", "获取当前日期和时间", {"type": "object", "properties": {}}, risk=RISK_READ)
 def get_current_time():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -85,7 +93,7 @@ def get_current_time():
     "type": "object",
     "properties": {"expression": {"type": "string", "description": "要计算的数学表达式"}},
     "required": ["expression"],
-})
+}, risk=RISK_READ)
 def calculator(expression: str):
     # 注意：这里的 eval 只做教学演示，生产环境请用 AST + 白名单，或直接接一个计算 API。
     safe_dict = {
@@ -99,7 +107,7 @@ def calculator(expression: str):
 @tool("list_dir", "列出指定目录下的文件和子目录", {
     "type": "object",
     "properties": {"path": {"type": "string", "description": "要列出的目录，默认为当前工作目录"}},
-})
+}, risk=RISK_READ)
 def list_dir(path: str = "."):
     target = _safe_path(path)
     if not os.path.isdir(target):
@@ -115,7 +123,7 @@ def list_dir(path: str = "."):
     "type": "object",
     "properties": {"path": {"type": "string", "description": "要读取的文件路径"}},
     "required": ["path"],
-})
+}, risk=RISK_READ)
 def read_file(path: str):
     target = _safe_path(path)
     if not os.path.isfile(target):
@@ -131,7 +139,7 @@ def read_file(path: str):
         "content": {"type": "string", "description": "文件内容"},
     },
     "required": ["path", "content"],
-})
+}, risk=RISK_WRITE)
 def write_file(path: str, content: str):
     target = _safe_path(path)
     os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -147,7 +155,7 @@ def write_file(path: str, content: str):
         "tag": {"type": "string", "description": "可选标签，如 user/project/note"},
     },
     "required": ["content"],
-})
+}, risk=RISK_WRITE)
 def remember(content: str, tag: str = "general"):
     os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
     line = f"- [{tag}] {content}\n"
@@ -160,7 +168,7 @@ def remember(content: str, tag: str = "general"):
     "type": "object",
     "properties": {"keyword": {"type": "string", "description": "搜索关键词"}},
     "required": ["keyword"],
-})
+}, risk=RISK_READ)
 def recall(keyword: str):
     if not os.path.isfile(MEMORY_FILE):
         return json.dumps({"matches": []})
@@ -175,7 +183,7 @@ def recall(keyword: str):
         "command": {"type": "string", "description": "要执行的命令，例如 'git status' 或 'ls'"},
     },
     "required": ["command"],
-})
+}, risk=RISK_EXECUTE)
 def run_shell(command: str):
     # 1) 拆分命令：把 ';' / '&&' / '|' 等拼接拆成独立参数，避免偷塞子命令
     parts = shlex.split(command)
@@ -218,7 +226,7 @@ def run_shell(command: str):
         "args": {"type": "string", "description": "可选命令行参数，用空格分隔，默认空"},
     },
     "required": ["script"],
-})
+}, risk=RISK_EXECUTE)
 def run_python(script: str, args: str = ""):
     # 1) 脚本必须在工作目录内：run_python 是"沙箱内的执行"，不是任意命令执行
     target = _safe_path(script)
@@ -259,7 +267,7 @@ def run_python(script: str, args: str = ""):
         "result": {"type": "string", "description": "(执行用) 关键结果"},
     },
     "required": ["summary", "plan", "steps"],
-})
+}, risk=RISK_READ)
 def final_answer(summary: str, steps: list[str], used_tools: list[str] | None = None,
                 verdict: str | None = None, feedback: str | None = None,
                 result: str | None = None):
@@ -288,7 +296,7 @@ def _rag_search(query: str, top_k: int = 3) -> list[dict]:
     "type": "object",
     "properties": {"query": {"type": "string", "description": "检索问题或关键词"}},
     "required": ["query"],
-})
+}, risk=RISK_READ)
 def kb_search(query: str):
     results = _rag_search(query, top_k=3)
     if not results:
@@ -299,6 +307,12 @@ def kb_search(query: str):
 
 def get_tool_schemas():
     return [t.schema() for t in _REGISTRY.values()]
+
+
+def get_risk(name: str) -> str:
+    """查工具的风险等级。未知工具按最危险的 write 处理（保守默认）。"""
+    t = _REGISTRY.get(name)
+    return t.risk if t is not None else RISK_WRITE
 
 
 def execute_tool(name, arguments):
