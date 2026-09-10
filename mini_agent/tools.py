@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import datetime
+import fnmatch
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -119,17 +121,124 @@ def list_dir(path: str = "."):
     return json.dumps(entries, ensure_ascii=False)
 
 
-@tool("read_file", "读取一个文本文件的内容", {
+# grep 跳过这些目录：版本控制/虚拟环境/依赖/缓存，它们要么超大要么不是"项目代码"。
+# 跳过是为了让结果聚焦在"你要找的那份代码"上，不是为了省时间。
+_GREP_SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__",
+                   "dist", "build", ".mypy_cache", ".pytest_cache", ".idea", ".vscode"}
+_GREP_MAX_FILE_BYTES = 1_000_000   # 超 1MB 的文件不搜（多半是数据/产物，不是源码）
+
+
+@tool("grep", "在项目目录内按正则搜索文件内容，返回 `文件:行号:内容`。找代码/找定义/找用法用它，比逐个 read_file 快得多。找不到时换关键词或缩小 path 再试。", {
     "type": "object",
-    "properties": {"path": {"type": "string", "description": "要读取的文件路径"}},
+    "properties": {
+        "pattern": {"type": "string", "description": "正则表达式，例如 'def main' 或 'class \\\\w+Agent'"},
+        "path": {"type": "string", "description": "搜索起点（目录或文件），默认当前工作目录"},
+        "glob": {"type": "string", "description": "可选文件名过滤，如 '*.py'"},
+        "ignore_case": {"type": "boolean", "description": "是否忽略大小写，默认 false"},
+        "max_results": {"type": "integer", "description": "最多返回多少条命中，默认 60"},
+    },
+    "required": ["pattern"],
+}, risk=RISK_READ)
+def grep(pattern: str, path: str = ".", glob: str | None = None,
+         ignore_case: bool = False, max_results: int = 60):
+    try:
+        rx = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
+    except re.error as exc:
+        return json.dumps({"error": f"正则表达式非法: {exc}"}, ensure_ascii=False)
+
+    root = _safe_path(path)
+    if not os.path.exists(root):
+        return json.dumps({"error": f"路径不存在: {path}"}, ensure_ascii=False)
+
+    # 起点是文件就直接搜它，是目录就 walk
+    if os.path.isfile(root):
+        candidates = [root]
+    else:
+        candidates = []
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in _GREP_SKIP_DIRS]
+            for fn in filenames:
+                if glob and not fnmatch.fnmatch(fn, glob):
+                    continue
+                candidates.append(os.path.join(dirpath, fn))
+
+    hits: list[str] = []
+    truncated = False
+    for full in candidates:
+        try:
+            if os.path.getsize(full) > _GREP_MAX_FILE_BYTES:
+                continue
+            with open(full, "rb") as fb:
+                if b"\x00" in fb.read(1024):   # 二进制探测：前 1KB 有 NUL 就当二进制跳过
+                    continue
+            with open(full, "r", encoding="utf-8", errors="replace") as f:
+                for lineno, line in enumerate(f, 1):
+                    if rx.search(line):
+                        rel = os.path.relpath(full, BASE_DIR).replace("\\", "/")
+                        hits.append(f"{rel}:{lineno}: {line.rstrip()[:300]}")
+                        if len(hits) >= max_results:
+                            truncated = True
+                            break
+        except OSError:
+            continue
+        if truncated:
+            break
+
+    if not hits:
+        return json.dumps({"matches": [], "note": f"没有找到匹配 {pattern!r} 的内容"}, ensure_ascii=False)
+    body = "\n".join(hits)
+    if truncated:
+        # 不静默截断：明说还有更多，让模型知道该缩小范围而不是以为"就这些"
+        body += f"\n（已达上限 {max_results} 条，可能还有更多命中，请缩小 path 或用更精确的 pattern）"
+    return body
+
+
+# 单行显示上限：一行几万字符（压缩过的 JS/JSON）会把上下文一次撑爆，
+# 而它在"看结构"这件事上毫无价值。截断并标注，比原样灌进去好。
+_READ_MAX_LINE_CHARS = 2000
+_READ_MAX_TOTAL_CHARS = 20000   # 与旧版一致的总体上限
+
+
+@tool("read_file", "读取文本文件，返回带行号的内容（格式 `行号\\t内容`），首行告知文件总行数与本次显示范围。大文件用 offset/limit 分段读。", {
+    "type": "object",
+    "properties": {
+        "path": {"type": "string", "description": "要读取的文件路径"},
+        "offset": {"type": "integer", "description": "从第几行开始读（从 1 开始），默认 1"},
+        "limit": {"type": "integer", "description": "最多读多少行，默认 200"},
+    },
     "required": ["path"],
 }, risk=RISK_READ)
-def read_file(path: str):
+def read_file(path: str, offset: int = 1, limit: int = 200):
     target = _safe_path(path)
     if not os.path.isfile(target):
-        return json.dumps({"error": f"文件不存在: {target}"})
-    with open(target, "r", encoding="utf-8") as f:
-        return f.read(20000)
+        return json.dumps({"error": f"文件不存在: {target}"}, ensure_ascii=False)
+
+    with open(target, "r", encoding="utf-8", errors="replace") as f:
+        all_lines = f.readlines()
+
+    total = len(all_lines)
+    start = max(1, int(offset))
+    limit = max(1, int(limit))
+    window = all_lines[start - 1: start - 1 + limit]
+
+    # 首行告知总量与范围：模型据此知道自己"没看全"，可以再用 offset 续读。
+    # 这是治"静默截断"的关键——旧版砍到 20000 字符但不说，模型以为文件就这么长。
+    if not window:
+        header = f"[{path} 共 {total} 行，显示 0 行（offset 超出文件末尾）]"
+    else:
+        header = f"[{path} 共 {total} 行，显示 {start}-{start + len(window) - 1} 行]"
+
+    out_lines = [header]
+    for i, line in enumerate(window, start):
+        body = line.rstrip("\n")
+        if len(body) > _READ_MAX_LINE_CHARS:
+            body = body[:_READ_MAX_LINE_CHARS] + "…(本行已截断)"
+        out_lines.append(f"{i:>6}\t{body}")
+
+    text = "\n".join(out_lines)
+    if len(text) > _READ_MAX_TOTAL_CHARS:
+        text = text[:_READ_MAX_TOTAL_CHARS] + "\n…(输出过长已截断，请用 offset/limit 分段读取)"
+    return text
 
 
 @tool("write_file", "把文本写入文件（会覆盖已有内容，自动创建父目录）", {
