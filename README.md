@@ -343,14 +343,13 @@ SSE 事件流：delta（文本增量）/ tool（调用工具）/ result（工具
 - **更多 MCP server**：挂上数据库、浏览器、CI 等外部能力，Bottle Code 就能真正"运维"。
 - **生产化改造**：`sessions.json` → SQLite/Redis、Element Plus 按需引入、鉴权、HTTPS（当前为教学演示，已知在此留白）。
 - **更硬的命令级沙箱**：`run_shell` 目前对 `cat` 读任意文件 / git 仓库操作仍开放，可深化到真正的命令级白名单。
-- **敏感路径拒绝**：`read` 类工具豁免职责边界之后，任何角色的 Agent 都能读 `BASE_DIR` 内的文件（**含 `.env`**）。需要一条 deny 规则把 `.env` / `.git/` / `*.key` 这类敏感路径挡在读操作之外。
 - **web 端异步审批**：目前只给 `--approval-policy allow|deny`。真正的逐次审批要新增 `approval_request` SSE 事件 + `POST /api/approve` 端点 + 让 Agent 循环"挂起等回话"（生成器要可暂停）——难在通道，不在判断。
 
 ## 安全提示（重要）
 
 - `calculator` 用 **AST 白名单**求值，**不用 `eval`**。旧版是 `eval(expr, {"__builtins__": {}}, safe_dict)`，而清空 `__builtins__` 挡不住从字面量做属性遍历——`().__class__.__bases__[0].__subclasses__()` 能摸到 `os.system`，实测可直接执行任意命令。AST 白名单下属性访问、下标、lambda、推导式、import 全部不可表达。
 - `write_file` / `read_file` 做了路径限制（`_safe_path`），但这还不够。真正的 Agent 一定要有**权限最小化、人工确认、沙箱执行、审计日志**——这四样本项目各有一份最小实现（职责边界 + 风险分级审批 + `run_python` 沙箱 + 审计日志），但都还是**教学级**。
-- **已知残余暴露面**：`read` 类工具豁免职责边界，意味着任何角色的 Agent 都能读 `BASE_DIR`（默认仓库根）内的文件，**包括 `.env`**。旧模型下 `allowed_tools` 能把这类读取一起挡住。部署到含密钥的环境时应另加敏感路径拒绝（`.env` / `.git/` 等）——这是已知待办。
+- **敏感路径拒绝**：`read` 类工具豁免职责边界，意味着任何角色的 Agent 都能读 `BASE_DIR`（默认仓库根）内的文件。为此在读内容的工具（`read_file` / `grep`）上加了一道**内容级**拒绝：`.env` / `.git/` / `*.key` / `*.pem` / `*credential*` 这类路径一律不读（返回 `[SENSITIVE]`），与危险等级无关——路径本身就是机密，读都不该读。写路径不受这条影响（写仍受职责边界 + 审批双重约束）。`grep` 走查目录时**静默跳过**敏感文件，而不是让整次搜索报错。
 
 ## 小结
 

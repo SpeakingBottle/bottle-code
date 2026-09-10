@@ -372,7 +372,6 @@ Three design points:
 - **More MCP servers**: mount databases, browsers, CI — then Bottle Code can genuinely do ops.
 - **Production hardening**: `sessions.json` → SQLite/Redis, on-demand Element Plus imports, auth, HTTPS (currently a teaching demo; these gaps are known and deliberate).
 - **A stricter command sandbox**: `run_shell` still permits `cat` on arbitrary files and git repo operations; this could go deeper into a true command-level allowlist.
-- **Sensitive-path deny list**: now that `read`-tier tools are exempt from the responsibility boundary, an Agent in any role can read files under `BASE_DIR` (**including `.env`**). A deny rule is needed to keep `.env` / `.git/` / `*.key` out of read operations.
 - **Async approval for the web app**: today it only takes `--approval-policy allow|deny`. Real per-call approval needs an `approval_request` SSE event + a `POST /api/approve` endpoint + an Agent loop that can suspend and wait — the hard part is the channel, not the decision.
 
 ## Security notes (important)
@@ -384,9 +383,12 @@ Three design points:
 - `write_file` / `read_file` enforce path limits (`_safe_path`), but that isn't enough. A real Agent needs **least privilege, human
   confirmation, sandboxed execution, and an audit log** — this project has a minimal version of each (responsibility boundary +
   risk-tiered approval + the `run_python` sandbox + an audit log), but all of them are still **teaching-grade**.
-- **Known residual exposure**: `read`-tier tools are exempt from the responsibility boundary, which means an Agent in *any* role
-  can read files under `BASE_DIR` (the repo root by default) — **including `.env`**. The old model's `allowed_tools` blocked that
-  too. Deploying somewhere with real secrets should add a sensitive-path deny list (`.env`, `.git/`, …); this is a known TODO.
+- **Sensitive-path denial**: `read`-tier tools are exempt from the responsibility boundary, which means an Agent in *any* role can
+  read files under `BASE_DIR` (the repo root by default). So content-reading tools (`read_file` / `grep`) carry a **content-level**
+  denial on top: `.env`, `.git/`, `*.key`, `*.pem`, `*credential*` and the like are never read (they return `[SENSITIVE]`),
+  independent of risk tier — the path itself is the secret, so it shouldn't be read at all. Write paths are unaffected (writes
+  still go through both the responsibility boundary and approval). When `grep` walks a directory it **silently skips** sensitive
+  files rather than failing the whole search.
 
 ## Wrap-up
 

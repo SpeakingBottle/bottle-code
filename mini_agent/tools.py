@@ -89,6 +89,48 @@ def _safe_path(path):
     return raw
 
 
+# —— 敏感路径：不允许"读内容" ——
+# 为什么需要单独一条：read 类工具豁免了职责边界（见 agent.py::_adjudicate），
+# 于是**任何角色**的 Agent 都能读 BASE_DIR 内的文件——包括仓库根那个装着真实
+# API key 的 .env。旧模型下 allowed_tools 能把这类读取一起挡住，read 豁免之后挡不住了。
+# 所以补一道与"危险等级"无关的**内容级**拒绝：路径本身就是机密，读都不该读。
+# 只作用于读内容的工具（read_file / grep）；写路径不受影响——写仍受职责边界 + 审批
+# 双重约束，而且"改一个你读不到的文件"在 edit_file 的前置条件下也走不通。
+_SENSITIVE_DIR_PARTS = {".git", ".ssh", ".aws", ".gnupg"}
+_SENSITIVE_NAME_PREFIXES = (".env", "secrets", "credentials", ".netrc", ".npmrc", ".pypirc")
+_SENSITIVE_NAME_SUBSTRINGS = ("id_rsa", "id_ed25519", "password", "passwd", "secret", "credential")
+_SENSITIVE_SUFFIXES = (".key", ".pem", ".p12", ".pfx", ".keystore", ".jks")
+
+
+def _is_sensitive_path(target: str) -> bool:
+    """判断绝对路径是否属于敏感路径（密钥 / 凭据 / 版本控制元数据）。"""
+    rel = os.path.relpath(target, BASE_DIR).replace("\\", "/")
+    parts = [p.lower() for p in rel.split("/") if p not in ("", ".")]
+    if not parts:
+        return False
+    name = parts[-1]
+    if any(p in _SENSITIVE_DIR_PARTS for p in parts[:-1]):
+        return True
+    if name.startswith(_SENSITIVE_NAME_PREFIXES):
+        return True
+    if name.endswith(_SENSITIVE_SUFFIXES):
+        return True
+    if any(s in name for s in _SENSITIVE_NAME_SUBSTRINGS):
+        return True
+    return False
+
+
+def _safe_read_path(path):
+    """读操作的路径校验：先过通用沙箱，再过敏感路径拒绝。
+
+    [SENSITIVE] 是稳定标记，供审计与评测（no_abuse）过滤。
+    """
+    target = _safe_path(path)
+    if _is_sensitive_path(target):
+        raise ValueError(f"[SENSITIVE] 敏感路径不允许读取: {path}")
+    return target
+
+
 @tool("get_current_time", "获取当前日期和时间", {"type": "object", "properties": {}}, risk=RISK_READ)
 def get_current_time():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -203,7 +245,7 @@ def grep(pattern: str, path: str = ".", glob: str | None = None,
     except re.error as exc:
         return json.dumps({"error": f"正则表达式非法: {exc}"}, ensure_ascii=False)
 
-    root = _safe_path(path)
+    root = _safe_read_path(path)   # 直接指定敏感文件 → 报 [SENSITIVE] 拒绝
     if not os.path.exists(root):
         return json.dumps({"error": f"路径不存在: {path}"}, ensure_ascii=False)
 
@@ -217,7 +259,12 @@ def grep(pattern: str, path: str = ".", glob: str | None = None,
             for fn in filenames:
                 if glob and not fnmatch.fnmatch(fn, glob):
                     continue
-                candidates.append(os.path.join(dirpath, fn))
+                full = os.path.join(dirpath, fn)
+                if _is_sensitive_path(full):
+                    # 走查时静默跳过敏感文件：仓库里有 .env 是常态，
+                    # 为它让整次 grep 报错不可接受的；这与跳过二进制/大文件同理。
+                    continue
+                candidates.append(full)
 
     hits: list[str] = []
     truncated = False
@@ -266,7 +313,7 @@ _READ_MAX_TOTAL_CHARS = 20000   # 与旧版一致的总体上限
     "required": ["path"],
 }, risk=RISK_READ)
 def read_file(path: str, offset: int = 1, limit: int = 200):
-    target = _safe_path(path)
+    target = _safe_read_path(path)
     if not os.path.isfile(target):
         return json.dumps({"error": f"文件不存在: {target}"}, ensure_ascii=False)
 

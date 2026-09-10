@@ -98,6 +98,10 @@ def _result_ok(result: str) -> bool:
 # 「这个调用允不允许」是 Agent 的判断，不是工具的判断。
 def _require_read(agent: "Agent", args: dict) -> None:
     target = tools._safe_path(args["path"])
+    # 敏感路径要单独说清楚。否则模型会收到"先 read_file"，照做又被 [SENSITIVE] 拒，
+    # 来回空转——给一个它永远满足不了的前置条件比直接拒绝更糟。
+    if tools._is_sensitive_path(target):
+        raise ValueError(f"[SENSITIVE] 敏感路径不允许修改: {args.get('path')}")
     if target not in agent._read_files:
         raise ValueError(f"修改前必须先 read_file 读取: {args.get('path')}")
 
