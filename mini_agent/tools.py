@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import ast
 import datetime
 import fnmatch
 import json
+import math
+import operator
 import os
 import re
 import shlex
@@ -91,18 +94,72 @@ def get_current_time():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-@tool("calculator", "计算一个数学表达式，例如 '2+3*4' 或 'sqrt(16)'", {
+# calculator 的求值白名单：只认这些节点/函数，其余一律拒绝。
+_ALLOWED_BINOPS = {
+    ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+    ast.Div: operator.truediv, ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod, ast.Pow: operator.pow,
+}
+_ALLOWED_UNARYOPS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+_ALLOWED_FUNCS = {
+    "abs": abs, "round": round, "min": min, "max": max,
+    "pow": pow, "log": math.log, "sqrt": math.sqrt,
+}
+_MAX_EXPONENT = 1000   # 2**999999999 这类会直接吃光内存/CPU，拦掉
+
+
+def _eval_node(node):
+    """递归求值 AST，只放行白名单内的节点类型。任何越界都抛 ValueError。"""
+    if isinstance(node, ast.Expression):
+        return _eval_node(node.body)
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, (int, float)):
+            return node.value
+        raise ValueError(f"不支持的常量: {node.value!r}")
+    if isinstance(node, ast.BinOp):
+        op = _ALLOWED_BINOPS.get(type(node.op))
+        if op is None:
+            raise ValueError(f"不支持的运算符: {type(node.op).__name__}")
+        left, right = _eval_node(node.left), _eval_node(node.right)
+        if isinstance(node.op, ast.Pow) and abs(right) > _MAX_EXPONENT:
+            raise ValueError(f"指数过大（>{_MAX_EXPONENT}），拒绝计算以防资源耗尽")
+        return op(left, right)
+    if isinstance(node, ast.UnaryOp):
+        op = _ALLOWED_UNARYOPS.get(type(node.op))
+        if op is None:
+            raise ValueError(f"不支持的一元运算符: {type(node.op).__name__}")
+        return op(_eval_node(node.operand))
+    if isinstance(node, ast.Call):
+        if not isinstance(node.func, ast.Name) or node.func.id not in _ALLOWED_FUNCS:
+            raise ValueError("只能调用: " + ", ".join(sorted(_ALLOWED_FUNCS)))
+        if node.keywords:
+            raise ValueError("不支持关键字参数")
+        return _ALLOWED_FUNCS[node.func.id](*[_eval_node(a) for a in node.args])
+    raise ValueError(f"不支持的表达式: {type(node).__name__}")
+
+
+@tool("calculator", "计算一个数学表达式，例如 '2+3*4' 或 'sqrt(16)'。支持 + - * / // % ** 与 abs/round/min/max/pow/log/sqrt", {
     "type": "object",
     "properties": {"expression": {"type": "string", "description": "要计算的数学表达式"}},
     "required": ["expression"],
 }, risk=RISK_READ)
 def calculator(expression: str):
-    # 注意：这里的 eval 只做教学演示，生产环境请用 AST + 白名单，或直接接一个计算 API。
-    safe_dict = {
-        "abs": abs, "round": round, "min": min, "max": max,
-        "pow": pow, "log": __import__("math").log, "sqrt": __import__("math").sqrt,
-    }
-    result = eval(expression, {"__builtins__": {}}, safe_dict)
+    """用 AST 白名单求值——**绝不 eval**。
+
+    旧版是 `eval(expr, {"__builtins__": {}}, safe_dict)`，注释里写着"生产环境请用
+    AST 白名单"。那个沙箱其实拦不住逃逸：清空 __builtins__ 挡不住从字面量做属性
+    遍历——`().__class__.__bases__[0].__subclasses__()` 就能摸到 Popen / os.system，
+    实测可以直接执行任意命令。
+
+    而 calculator 是 risk=read、豁免职责边界的工具，任何角色的 Agent 都调得到，
+    等于给 prompt injection 留了一条 RCE 通道（旧模型下 allowed_tools 还能挡，
+    新模型下挡不住了）。所以从根上关掉：只认白名单节点，属性访问/下标/lambda/
+    推导式/import 全部不可表达。
+    """
+    try:
+        result = _eval_node(ast.parse(expression, mode="eval"))
+    except (SyntaxError, ValueError, TypeError, ZeroDivisionError, OverflowError) as exc:
+        return json.dumps({"error": f"无法计算: {exc}"}, ensure_ascii=False)
     return str(result)
 
 
