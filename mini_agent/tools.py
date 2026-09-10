@@ -241,6 +241,48 @@ def read_file(path: str, offset: int = 1, limit: int = 200):
     return text
 
 
+@tool("edit_file", "精确替换文件中的一段文本：old_string 必须与文件内容逐字符一致（含缩进、空行），且在文件中唯一。改已有文件优先用它——不重写整个文件，出错面小得多。改之前必须先 read_file。", {
+    "type": "object",
+    "properties": {
+        "path": {"type": "string", "description": "要修改的文件路径"},
+        "old_string": {"type": "string", "description": "要被替换的原文（必须与文件内容逐字符一致，且在文件中唯一）"},
+        "new_string": {"type": "string", "description": "替换后的新文本"},
+        "replace_all": {"type": "boolean", "description": "为 true 时替换所有出现；默认 false，要求 old_string 唯一"},
+    },
+    "required": ["path", "old_string", "new_string"],
+}, risk=RISK_WRITE)
+def edit_file(path: str, old_string: str, new_string: str, replace_all: bool = False):
+    target = _safe_path(path)
+    if not os.path.isfile(target):
+        return json.dumps({"error": f"文件不存在: {target}"}, ensure_ascii=False)
+
+    with open(target, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    count = content.count(old_string)
+    if count == 0:
+        return json.dumps({
+            "error": f"old_string 在 {path} 中未找到。请先用 read_file 确认原文（注意缩进与空行必须完全一致）。"
+        }, ensure_ascii=False)
+    if count > 1 and not replace_all:
+        # 不唯一就拒绝，逼模型多带几行上下文——这是防"改错地方"的核心。
+        # 自动挑第一个出现看着方便，实际是静默猜意图，猜错代价远大于多问一轮。
+        return json.dumps({
+            "error": f"old_string 在 {path} 中出现 {count} 次，不唯一。"
+                     f"请扩大 old_string 的范围（多带几行上下文）使其唯一，或用 replace_all=true。"
+        }, ensure_ascii=False)
+
+    lines_before = content.count("\n") + 1
+    new_content = content.replace(old_string, new_string) if replace_all \
+        else content.replace(old_string, new_string, 1)
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(new_content)
+    return json.dumps({
+        "ok": True, "path": path, "replaced": count if replace_all else 1,
+        "lines_before": lines_before, "lines_after": new_content.count("\n") + 1,
+    }, ensure_ascii=False)
+
+
 @tool("write_file", "把文本写入文件（会覆盖已有内容，自动创建父目录）", {
     "type": "object",
     "properties": {
